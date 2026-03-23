@@ -60,7 +60,7 @@ class Watchlist(SQLModel, table=True):
                 values_callable=lambda e: [i.value for i in e],
                 validate_strings=True,
             ),
-            nullable=True,
+            nullable=False,
         )
     )
 

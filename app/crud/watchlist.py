@@ -79,7 +79,7 @@ class CRUDWatchlist(CRUDBase[Watchlist, WatchlistCreate, WatchlistUpdate]):
             .limit(1)
         )
         return session.exec(stmt).first()
-
+    
     # ---- LISTs -----
     def list_public_by_name(
         self, session: Session, *, name: str, limit: int = 20, offset: int = 0

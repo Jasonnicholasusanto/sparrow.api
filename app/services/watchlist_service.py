@@ -1,4 +1,5 @@
 from __future__ import annotations
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional, Union
 import uuid
@@ -14,6 +15,7 @@ from app.models.watchlist_item import WatchlistItem
 from app.models.watchlist_share import WatchlistShare
 from app.schemas.watchlist import (
     WatchlistCreate,
+    WatchlistDetailOut,
     WatchlistForkOut,
     WatchlistOut,
     WatchlistUpdate,
@@ -24,6 +26,7 @@ from app.schemas.watchlist_item import (
     WatchlistItemBase,
     WatchlistItemCreate,
     WatchlistItemCreateWithoutId,
+    WatchlistItemOut,
     WatchlistItemUpdate,
 )
 from app.schemas.watchlist_share import WatchlistShareCreate
@@ -36,6 +39,50 @@ def search_public_watchlists_by_name(
         session, name=name, limit=limit, offset=offset
     )
 
+def get_user_public_watchlists(
+    session,
+    *,
+    user_profile_id: uuid.UUID,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[WatchlistDetailOut]:
+    watchlists_stmt = (
+        select(Watchlist)
+        .where(
+            Watchlist.user_id == user_profile_id,
+            Watchlist.visibility == WatchlistVisibility.PUBLIC,
+        )
+        .order_by(Watchlist.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+
+    watchlists = list(session.exec(watchlists_stmt).all())
+
+    if not watchlists:
+        return []
+
+    watchlist_ids = [watchlist.id for watchlist in watchlists]
+
+    items_stmt = (
+        select(WatchlistItem)
+        .where(WatchlistItem.watchlist_id.in_(watchlist_ids))
+        .order_by(WatchlistItem.watchlist_id, WatchlistItem.position.asc(), WatchlistItem.id.asc())
+    )
+
+    items = list(session.exec(items_stmt).all())
+
+    items_by_watchlist_id: dict[int, list[WatchlistItem]] = defaultdict(list)
+    for item in items:
+        items_by_watchlist_id[item.watchlist_id].append(item)
+
+    return [
+        WatchlistDetailOut(
+            watchlist=WatchlistOut.model_validate(watchlist, from_attributes=True),
+            items=[WatchlistItemBase.model_validate(item, from_attributes=True) for item in items_by_watchlist_id.get(watchlist.id, [])],
+        )
+        for watchlist in watchlists
+    ]
 
 def get_all_user_related_watchlists(
     session,
@@ -51,7 +98,7 @@ def get_all_user_related_watchlists(
       3. Watchlists shared with the user,
       4. Watchlists the user bookmarked.
 
-    Returns a dictionary categorizing watchlists by their relationship to the user.
+    Also attaches watchlist_items for each returned watchlist.
     """
 
     # 1. Watchlists CREATED by the user (excluding forks)
@@ -101,24 +148,50 @@ def get_all_user_related_watchlists(
         shared_watchlists = shared_watchlists[offset : offset + limit]
         bookmarked_watchlists = bookmarked_watchlists[offset : offset + limit]
 
-    # 4. Build Response
+    # Collect all unique watchlist IDs from all categories
+    all_watchlists = (
+        owned_watchlists
+        + forked_watchlists
+        + shared_watchlists
+        + bookmarked_watchlists
+    )
+
+    watchlist_ids = list({w.id for w in all_watchlists})
+
+    # Fetch all items in one query
+    items_by_watchlist_id: dict[int, list[WatchlistItem]] = defaultdict(list)
+
+    if watchlist_ids:
+        items_stmt = (
+            select(WatchlistItem)
+            .where(WatchlistItem.watchlist_id.in_(watchlist_ids))
+            .order_by(
+                WatchlistItem.watchlist_id,
+                WatchlistItem.position.asc(),
+                WatchlistItem.id.asc(),
+            )
+        )
+
+        items = list(session.exec(items_stmt).all())
+
+        for item in items:
+            items_by_watchlist_id[item.watchlist_id].append(item)
+
+    def build_watchlist_out(w: Watchlist) -> WatchlistOut:
+        base = WatchlistOut.model_validate(w, from_attributes=True).model_dump()
+
+        base["items"] = [
+            WatchlistItemOut.model_validate(item, from_attributes=True)
+            for item in items_by_watchlist_id.get(w.id, [])
+        ]
+
+        return WatchlistOut(**base)
+
     return {
-        "created": [
-            WatchlistOut.model_validate(w, from_attributes=True)
-            for w in owned_watchlists
-        ],
-        "forked": [
-            WatchlistOut.model_validate(w, from_attributes=True)
-            for w in forked_watchlists
-        ],
-        "shared": [
-            WatchlistOut.model_validate(w, from_attributes=True)
-            for w in shared_watchlists
-        ],
-        "bookmarked": [
-            WatchlistOut.model_validate(w, from_attributes=True)
-            for w in bookmarked_watchlists
-        ],
+        "created": [build_watchlist_out(w) for w in owned_watchlists],
+        "forked": [build_watchlist_out(w) for w in forked_watchlists],
+        "shared": [build_watchlist_out(w) for w in shared_watchlists],
+        "bookmarked": [build_watchlist_out(w) for w in bookmarked_watchlists],
         "total_count": len(owned_watchlists)
         + len(forked_watchlists)
         + len(shared_watchlists)
