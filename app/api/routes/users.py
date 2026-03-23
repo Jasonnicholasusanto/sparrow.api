@@ -1,4 +1,5 @@
 from uuid import UUID
+from app.services.watchlist_service import get_user_public_watchlists
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies.profile import get_current_profile
@@ -57,6 +58,14 @@ def get_public_user_profile_by_username(
     followers_count = get_followers_count(db, user_id=profile.id)
     following_count = get_following_count(db, user_id=profile.id)
 
+    # 4) Watchlists
+    public_watchlists = get_user_public_watchlists(db, user_profile_id=profile.id)
+    print("Public watchlists:", public_watchlists)
+    watchlists = {
+        "total": len(public_watchlists),
+        "watchlists": public_watchlists,
+    }
+
     return UserDetailsPublic(
         profile=UserProfilePublic.model_validate(profile, from_attributes=True),
         points=UserActivityPointsBreakdown.model_validate(points, from_attributes=True)
@@ -64,6 +73,7 @@ def get_public_user_profile_by_username(
         else None,
         followers_count=followers_count or 0,
         following_count=following_count or 0,
+        watchlists=watchlists,
     )
 
 

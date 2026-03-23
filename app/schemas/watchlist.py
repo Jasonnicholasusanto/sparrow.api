@@ -7,7 +7,7 @@ from datetime import datetime
 
 from pydantic import ConfigDict, Field, BaseModel
 
-from app.schemas.watchlist_item import WatchlistItemBase
+from app.schemas.watchlist_item import WatchlistItemBase, WatchlistItemOut
 
 
 class WatchlistVisibility(str, Enum):
@@ -31,9 +31,9 @@ class WatchlistBase(BaseModel):
     visibility: WatchlistVisibility = WatchlistVisibility.PRIVATE.value
     forked_from_id: Optional[int] = None
     forked_at: Optional[datetime] = None
-    fork_count: int = 0
+    fork_count: Optional[int] = 0
     original_author_id: Optional[UUID] = None
-    allocation_type: Optional[StockAllocationType] = None
+    allocation_type: StockAllocationType
 
 
 class WatchlistCreate(WatchlistBase):
@@ -65,6 +65,12 @@ class WatchlistOut(WatchlistBase):
     is_default: bool
     created_at: datetime
     updated_at: datetime
+    items: Optional[List[WatchlistItemOut]] = None
+
+
+class WatchlistDetailOut(BaseModel):
+    watchlist: WatchlistOut
+    items: List[WatchlistItemBase]
 
 
 class WatchlistForkOut(BaseModel):
