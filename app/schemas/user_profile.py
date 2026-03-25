@@ -87,6 +87,7 @@ class UserProfilePublic(BaseModel):
     bio: Optional[str] = None
     profile_picture: Optional[str] = None
     background_picture: Optional[str] = None
+    created_at: date
 
 
 class UserProfilesPublic(BaseModel):
@@ -110,3 +111,4 @@ class UserProfileMe(BaseModel):
     email_address: str
     is_active: bool
     is_admin: bool = False
+    created_at: date
