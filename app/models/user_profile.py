@@ -36,3 +36,5 @@ class UserProfile(SQLModel, table=True):
     background_picture: Optional[str] = None
     is_active: bool = Field(default=True)
     is_admin: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)

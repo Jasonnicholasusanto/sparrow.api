@@ -65,6 +65,9 @@ def create_user_profile(
 
     db_obj = user_profile_crud.create(session, obj_in=profile_in, auth_id=auth_id)
 
+    if db_obj:
+        db_obj.created_at = db_obj.created_at.date()
+
     return UserProfileMe.model_validate(db_obj)
 
 
@@ -77,6 +80,8 @@ def get_user_profile(
     session: Session, *, user_id: uuid.UUID
 ) -> Optional[UserProfilePublic]:
     obj = user_profile_crud.get(session, id=user_id)
+    if obj:
+        obj.created_at = obj.created_at.date()
     return UserProfilePublic.model_validate(obj) if obj else None
 
 
@@ -91,6 +96,8 @@ def get_user_profile_by_auth(
     session: Session, *, auth_id: uuid.UUID
 ) -> Optional[UserProfileMe]:
     obj = user_profile_crud.get_by_auth_id(session, auth_id=auth_id)
+    if obj:
+        obj.created_at = obj.created_at.date()
     return UserProfileMe.model_validate(obj) if obj else None
 
 
@@ -98,6 +105,8 @@ def get_user_profile_by_username(
     session: Session, *, username: str
 ) -> Optional[UserProfilePublic]:
     obj = user_profile_crud.get_by_username(session, username=username)
+    if obj:
+        obj.created_at = obj.created_at.date()
     return UserProfilePublic.model_validate(obj) if obj else None
 
 
@@ -138,6 +147,9 @@ def list_user_profiles(
     stmt = stmt.order_by(UserProfile.username).offset(skip).limit(limit)
     rows: Iterable[UserProfile] = session.exec(stmt).all()  # type: ignore
 
+    for r in rows:
+        r.created_at = r.created_at.date()
+
     data = [UserProfilePublic.model_validate(r) for r in rows]
     return UserProfilesPublic(data=data, count=total)
 
@@ -170,6 +182,8 @@ def update_user_profile(
         raise ValueError("auth_id cannot be modified.")
 
     updated = user_profile_crud.update(session, id=user_id, obj_in=profile_update)
+    if updated:
+        updated.created_at = updated.created_at.date()
     return UserProfileMe.model_validate(updated) if updated else None
 
 
@@ -187,6 +201,10 @@ def update_user_email_address(
         return None
 
     updated = user_profile_crud.update(session, id=user_id, obj_in=email_update)
+
+    if updated:
+        updated.created_at = updated.created_at.date()
+
     return UserProfileMe.model_validate(updated) if updated else None
 
 
@@ -199,6 +217,8 @@ def soft_delete_user_profile(
     session: Session, *, user_id: uuid.UUID
 ) -> Optional[UserProfileMe]:
     obj = user_profile_crud.soft_delete(session, id=user_id)
+    if obj:
+        obj.created_at = obj.created_at.date()
     return UserProfileMe.model_validate(obj) if obj else None
 
 
@@ -206,6 +226,8 @@ def reactivate_user_profile(
     session: Session, *, user_id: uuid.UUID
 ) -> Optional[UserProfileMe]:
     obj = user_profile_crud.reactivate(session, id=user_id)
+    if obj:
+        obj.created_at = obj.created_at.date()
     return UserProfileMe.model_validate(obj) if obj else None
 
 
@@ -219,6 +241,8 @@ def get_me(session: Session, *, auth_id: uuid.UUID) -> Optional[UserProfileMe]:
     Convenience: return the richer 'me' payload for the authenticated user.
     """
     obj = user_profile_crud.get_by_auth_id(session, auth_id=auth_id)
+    if obj:
+        obj.created_at = obj.created_at.date()
     return UserProfileMe.model_validate(obj) if obj else None
 
 
