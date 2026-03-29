@@ -440,7 +440,7 @@ async def lookup_all(
 
 
 @router.get("/search-quotes/{query}")
-async def search_tickers(
+async def search_quotes(
     query: str,
     user=Depends(get_current_profile),
     max_results: int = Query(10, description="Number of results to return"),
@@ -464,6 +464,15 @@ async def search_tickers(
 
         # Clean up output
         results = [SearchResponse(**item) for item in quotes]
+
+        tickers_data = yf.Tickers(" ".join([result.symbol for result in results]))
+        results = {}
+        for symbol in tickers_data.symbols:
+            try:
+                fi = tickers_data.tickers[symbol].fast_info
+                results[symbol] = TickerFastInfoResponse(symbol=symbol.upper(), **fi)
+            except Exception as inner_e:
+                results[symbol] = {"error": str(inner_e)}
 
         return {"query": query, "results": results}
 
