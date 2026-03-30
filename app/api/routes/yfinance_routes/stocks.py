@@ -6,7 +6,11 @@ from app.api.dependencies.profile import get_current_profile
 from app.core.config import settings
 from app.schemas.stocks import (
     MultiTickerSparklineResponse,
+    SearchQuoteEnrichedResponse,
+    SearchQuotesEnrichedResult,
     SearchResponse,
+    SimplifiedSearchQuoteResponse,
+    SimplifiedSearchQuotesResult,
     SparklinePoint,
     TickerFastInfoResponse,
     TickerHistory,
@@ -440,9 +444,79 @@ async def lookup_all(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
         )
+    
+
+@router.get("/search-quotes-simplified/{query}", response_model=SimplifiedSearchQuotesResult)
+async def search_quotes_simplified(
+    query: str,
+    user=Depends(get_current_profile),
+    max_results: int = Query(10, description="Number of results to return"),
+    recommended: int = Query(10, description="Recommended number of results to return"),
+    enable_fuzzy_query: bool = Query(True, description="Enable fuzzy search"),
+):
+    try:
+        search = yf.Search(
+            query=query,
+            max_results=max_results,
+            recommended=recommended,
+            enable_fuzzy_query=enable_fuzzy_query,
+        )
+
+        search.search()
+        quotes = search.quotes or []
+
+        base_results = [SearchResponse(**item) for item in quotes]
+
+        symbols = [result.symbol for result in base_results if result.symbol]
+
+        if not symbols:
+            return {"query": query, "results": []}
+        
+        tickers_data = yf.Tickers(" ".join(symbols))
+
+        merged_results: list[SearchQuoteEnrichedResponse] = []
+
+        for result in base_results:
+            if not result.symbol:
+                continue
+
+            fi = None
+            try:
+                fi = tickers_data.tickers[result.symbol].fast_info
+            except Exception:
+                fi = None
+
+            merged_results.append(
+                SimplifiedSearchQuoteResponse(
+                    symbol=result.symbol,
+                    shortname=result.shortname,
+                    longname=result.longname,
+                    exchange=result.exchange,
+                    currency=fi.get("currency") if fi else None,
+                    lastPrice=fi.get("lastPrice") if fi else None,
+                    timezone=fi.get("timezone") if fi else None,
+                    regularMarketPreviousClose=(
+                        fi.get("regularMarketPreviousClose") if fi else None
+                    ),
+                    regularMarketChange=(fi.get("lastPrice") - fi.get("regularMarketPreviousClose")) if fi else None,
+                    regularMarketChangePercent=(
+                        ((fi.get("lastPrice") - fi.get("regularMarketPreviousClose")) / fi.get("regularMarketPreviousClose") * 100)
+                        if fi and fi.get("lastPrice") is not None and fi.get("regularMarketPreviousClose") is not None else None
+                    )
+                )
+            )
+
+        return {"query": query, "results": merged_results}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
 
 
-@router.get("/search-quotes/{query}")
+@router.get("/search-quotes/{query}", response_model=SearchQuotesEnrichedResult)
 async def search_quotes(
     query: str,
     user=Depends(get_current_profile),
@@ -451,7 +525,6 @@ async def search_quotes(
     enable_fuzzy_query: bool = Query(True, description="Enable fuzzy search"),
 ):
     try:
-        # Create Search object
         search = yf.Search(
             query=query,
             max_results=max_results,
@@ -459,31 +532,89 @@ async def search_quotes(
             enable_fuzzy_query=enable_fuzzy_query,
         )
 
-        # Run the search
         search.search()
+        quotes = search.quotes or []
 
-        # Get quotes (stock results only)
-        quotes = search.quotes
+        base_results = [SearchResponse(**item) for item in quotes]
+        symbols = [result.symbol for result in base_results if result.symbol]
 
-        # Clean up output
-        results = [SearchResponse(**item) for item in quotes]
+        if not symbols:
+            return {"query": query, "results": []}
 
-        tickers_data = yf.Tickers(" ".join([result.symbol for result in results]))
-        results = {}
-        for symbol in tickers_data.symbols:
+        tickers_data = yf.Tickers(" ".join(symbols))
+
+        merged_results: list[SearchQuoteEnrichedResponse] = []
+
+        for result in base_results:
+            if not result.symbol:
+                continue
+
+            fi = None
             try:
-                fi = tickers_data.tickers[symbol].fast_info
-                results[symbol] = TickerFastInfoResponse(symbol=symbol.upper(), **fi)
-            except Exception as inner_e:
-                results[symbol] = {"error": str(inner_e)}
+                fi = tickers_data.tickers[result.symbol].fast_info
+            except Exception:
+                fi = None
 
-        return {"query": query, "results": results}
+            last_price = None
+            previous_close = None
+            regular_market_change = None
+            regular_market_change_percent = None
+
+            if fi:
+                last_price = fi.get("lastPrice")
+                previous_close = fi.get("regularMarketPreviousClose") or fi.get(
+                    "previousClose"
+                )
+
+                if (
+                    last_price is not None
+                    and previous_close is not None
+                    and previous_close != 0
+                ):
+                    regular_market_change = last_price - previous_close
+                    regular_market_change_percent = (
+                        regular_market_change / previous_close
+                    ) * 100
+
+            merged_results.append(
+                SearchQuoteEnrichedResponse(
+                    symbol=result.symbol,
+                    score=result.score,
+                    shortname=result.shortname,
+                    longname=result.longname,
+                    index=result.index,
+                    exchange=result.exchange,
+                    exchDisp=result.exchDisp,
+                    typeDisp=result.typeDisp,
+                    sectorDisp=result.sectorDisp,
+                    industryDisp=result.industryDisp,
+                    currency=fi.get("currency") if fi else None,
+                    lastPrice=last_price,
+                    open=fi.get("open") if fi else None,
+                    dayHigh=fi.get("dayHigh") if fi else None,
+                    dayLow=fi.get("dayLow") if fi else None,
+                    previousClose=fi.get("previousClose") if fi else None,
+                    regularMarketPreviousClose=(
+                        fi.get("regularMarketPreviousClose") if fi else None
+                    ),
+                    lastVolume=fi.get("lastVolume") if fi else None,
+                    yearChange=fi.get("yearChange") if fi else None,
+                    yearHigh=fi.get("yearHigh") if fi else None,
+                    yearLow=fi.get("yearLow") if fi else None,
+                    timezone=fi.get("timezone") if fi else None,
+                    regularMarketChange=regular_market_change,
+                    regularMarketChangePercent=regular_market_change_percent,
+                )
+            )
+
+        return {"query": query, "results": merged_results}
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
         )
 
 
