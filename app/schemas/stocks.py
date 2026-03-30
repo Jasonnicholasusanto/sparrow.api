@@ -92,6 +92,68 @@ class TickerFastInfoResponse(BaseModel):
     )
 
 
+class SearchQuoteEnrichedResponse(BaseModel):
+    symbol: Optional[str] = Field(None, description="Ticker symbol")
+    score: Optional[float] = Field(None, description="Search relevance score")
+    shortname: Optional[str] = Field(None, description="Short company name")
+    longname: Optional[str] = Field(None, description="Long company name")
+    index: Optional[str] = Field(None, description="Index type if applicable")
+    exchange: Optional[str] = Field(None, description="Exchange symbol")
+    exchDisp: Optional[str] = Field(None, description="Display exchange name")
+    typeDisp: Optional[str] = Field(None, description="Display quote type")
+    sectorDisp: Optional[str] = Field(None, description="Display sector")
+    industryDisp: Optional[str] = Field(None, description="Display industry")
+    currency: Optional[str] = Field(None, description="Trading currency")
+    lastPrice: Optional[float] = Field(None, description="Latest traded price")
+    open: Optional[float] = Field(None, description="Session open price")
+    dayHigh: Optional[float] = Field(None, description="Session high")
+    dayLow: Optional[float] = Field(None, description="Session low")
+    previousClose: Optional[float] = Field(None, description="Previous close")
+    regularMarketPreviousClose: Optional[float] = Field(
+        None, description="Regular market previous close"
+    )
+    lastVolume: Optional[int] = Field(None, description="Latest volume")
+    yearChange: Optional[float] = Field(None, description="1-year change")
+    yearHigh: Optional[float] = Field(None, description="52-week high")
+    yearLow: Optional[float] = Field(None, description="52-week low")
+    timezone: Optional[str] = Field(None, description="Exchange timezone")
+    regularMarketChange: Optional[float] = Field(
+        None, description="Current price minus previous close"
+    )
+    regularMarketChangePercent: Optional[float] = Field(
+        None, description="Percentage change from previous close"
+    )
+
+
+class SearchQuotesEnrichedResult(BaseModel):
+    query: str
+    results: list[SearchQuoteEnrichedResponse]
+
+
+class SimplifiedSearchQuoteResponse(BaseModel):
+    symbol: Optional[str] = Field(None, description="Ticker symbol")
+    shortname: Optional[str] = Field(None, description="Short company name")
+    longname: Optional[str] = Field(None, description="Long company name")
+    exchange: Optional[str] = Field(None, description="Exchange symbol")
+    currency: Optional[str] = Field(None, description="Trading currency")
+    lastPrice: Optional[float] = Field(None, description="Latest traded price")
+    timezone: Optional[str] = Field(None, description="Exchange timezone")
+    regularMarketPreviousClose: Optional[float] = Field(
+        None, description="Regular market previous close"
+    )
+    regularMarketChange: Optional[float] = Field(
+        None, description="Current price minus previous close"
+    )
+    regularMarketChangePercent: Optional[float] = Field(
+        None, description="Percentage change from previous close"
+    )
+
+
+class SimplifiedSearchQuotesResult(BaseModel):
+    query: str
+    results: list[SimplifiedSearchQuoteResponse]
+
+
 class TickersFastInfoResponse(BaseModel):
     results: Dict[str, TickerFastInfoResponse]
 
