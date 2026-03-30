@@ -18,7 +18,7 @@ from app.utils.screener import (
 )
 
 
-router = APIRouter(prefix="/screen", tags=["screener"])
+router = APIRouter(prefix="/screen", tags=["Screener"])
 
 
 @router.get("/predefined-queries")

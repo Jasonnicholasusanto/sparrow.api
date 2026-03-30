@@ -5,7 +5,7 @@ from app.api.deps import SessionDep
 from app.services.navbar_routes_service import get_navbar_routes
 
 
-router = APIRouter(prefix="/navbar", tags=["navbar"])
+router = APIRouter(prefix="/navbar", tags=["Navbar"])
 
 
 @router.get("/items", response_model=NavbarRoutes)

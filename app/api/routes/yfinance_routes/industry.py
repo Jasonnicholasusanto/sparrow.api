@@ -7,7 +7,7 @@ from app.schemas.stocks import TickerInfoResponse
 from app.utils.global_variables import SECTOR_INDUSTRY_MAP
 
 
-router = APIRouter(prefix="/industry", tags=["industry"])
+router = APIRouter(prefix="/industry", tags=["Industry"])
 
 
 @router.get("/list")

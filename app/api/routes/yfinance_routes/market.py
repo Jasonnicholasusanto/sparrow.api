@@ -8,7 +8,7 @@ from app.api.dependencies.profile import get_current_profile
 from app.utils.global_variables import MARKETS
 
 
-router = APIRouter(prefix="/market", tags=["market"])
+router = APIRouter(prefix="/market", tags=["Market"])
 
 
 def safe_json(obj: Any):

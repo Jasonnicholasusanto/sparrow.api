@@ -15,7 +15,7 @@ from app.utils.global_variables import STOCK_INTERVALS, STOCK_PERIODS
 from app.utils.stocks import get_regular_market_change
 
 
-router = APIRouter(prefix="/stocks", tags=["stocks"])
+router = APIRouter(prefix="/stocks", tags=["Stocks"])
 
 
 @router.get("/av/get-ticker-info/{symbol}")
