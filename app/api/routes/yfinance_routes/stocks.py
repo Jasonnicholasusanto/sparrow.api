@@ -549,32 +549,30 @@ async def search_quotes(
             if not result.symbol:
                 continue
 
-            fi = None
+            fi = {}
             try:
-                fi = tickers_data.tickers[result.symbol].fast_info
+                raw_fi = tickers_data.tickers[result.symbol].fast_info
+                fi = dict(raw_fi) if raw_fi else {}
             except Exception:
-                fi = None
+                fi = {}
 
-            last_price = None
-            previous_close = None
+            last_price = fi.get("lastPrice")
+            previous_close = fi.get("regularMarketPreviousClose") or fi.get(
+                "previousClose"
+            )
+
             regular_market_change = None
             regular_market_change_percent = None
 
-            if fi:
-                last_price = fi.get("lastPrice")
-                previous_close = fi.get("regularMarketPreviousClose") or fi.get(
-                    "previousClose"
-                )
-
-                if (
-                    last_price is not None
-                    and previous_close is not None
-                    and previous_close != 0
-                ):
-                    regular_market_change = last_price - previous_close
-                    regular_market_change_percent = (
-                        regular_market_change / previous_close
-                    ) * 100
+            if (
+                last_price is not None
+                and previous_close is not None
+                and previous_close != 0
+            ):
+                regular_market_change = last_price - previous_close
+                regular_market_change_percent = (
+                    regular_market_change / previous_close
+                ) * 100
 
             merged_results.append(
                 SearchQuoteEnrichedResponse(
@@ -583,25 +581,23 @@ async def search_quotes(
                     shortname=result.shortname,
                     longname=result.longname,
                     index=result.index,
-                    exchange=result.exchange,
+                    exchange=result.exchange or fi.get("exchange"),
                     exchDisp=result.exchDisp,
                     typeDisp=result.typeDisp,
                     sectorDisp=result.sectorDisp,
                     industryDisp=result.industryDisp,
-                    currency=fi.get("currency") if fi else None,
+                    currency=fi.get("currency"),
                     lastPrice=last_price,
-                    open=fi.get("open") if fi else None,
-                    dayHigh=fi.get("dayHigh") if fi else None,
-                    dayLow=fi.get("dayLow") if fi else None,
-                    previousClose=fi.get("previousClose") if fi else None,
-                    regularMarketPreviousClose=(
-                        fi.get("regularMarketPreviousClose") if fi else None
-                    ),
-                    lastVolume=fi.get("lastVolume") if fi else None,
-                    yearChange=fi.get("yearChange") if fi else None,
-                    yearHigh=fi.get("yearHigh") if fi else None,
-                    yearLow=fi.get("yearLow") if fi else None,
-                    timezone=fi.get("timezone") if fi else None,
+                    open=fi.get("open"),
+                    dayHigh=fi.get("dayHigh"),
+                    dayLow=fi.get("dayLow"),
+                    previousClose=fi.get("previousClose"),
+                    regularMarketPreviousClose=fi.get("regularMarketPreviousClose"),
+                    lastVolume=fi.get("lastVolume"),
+                    yearChange=fi.get("yearChange"),
+                    yearHigh=fi.get("yearHigh"),
+                    yearLow=fi.get("yearLow"),
+                    timezone=fi.get("timezone"),
                     regularMarketChange=regular_market_change,
                     regularMarketChangePercent=regular_market_change_percent,
                 )
@@ -616,7 +612,6 @@ async def search_quotes(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         )
-
 
 @router.get("/search-all/{query}")
 async def search_all(
