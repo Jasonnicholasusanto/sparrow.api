@@ -5,17 +5,20 @@ import requests
 from app.api.dependencies.profile import get_current_profile
 from app.core.config import settings
 from app.schemas.stocks import (
+    MultiTickerSparklineResponse,
     SearchResponse,
+    SparklinePoint,
     TickerFastInfoResponse,
     TickerHistory,
     TickerInfoResponse,
+    TickerSparklineResponse,
     TickersRequest,
 )
 from app.utils.global_variables import STOCK_INTERVALS, STOCK_PERIODS
 from app.utils.stocks import get_regular_market_change
 
 
-router = APIRouter(prefix="/stocks", tags=["stocks"])
+router = APIRouter(prefix="/stocks", tags=["Stocks"])
 
 
 @router.get("/av/get-ticker-info/{symbol}")
@@ -440,7 +443,7 @@ async def lookup_all(
 
 
 @router.get("/search-quotes/{query}")
-async def search_tickers(
+async def search_quotes(
     query: str,
     user=Depends(get_current_profile),
     max_results: int = Query(10, description="Number of results to return"),
@@ -464,6 +467,15 @@ async def search_tickers(
 
         # Clean up output
         results = [SearchResponse(**item) for item in quotes]
+
+        tickers_data = yf.Tickers(" ".join([result.symbol for result in results]))
+        results = {}
+        for symbol in tickers_data.symbols:
+            try:
+                fi = tickers_data.tickers[symbol].fast_info
+                results[symbol] = TickerFastInfoResponse(symbol=symbol.upper(), **fi)
+            except Exception as inner_e:
+                results[symbol] = {"error": str(inner_e)}
 
         return {"query": query, "results": results}
 
@@ -556,7 +568,7 @@ async def get_analyst_recommendations(symbol: str, user=Depends(get_current_prof
 ### Analyst Recommendation Summary Endpoint
 
 
-@router.get("yf/get-ticker-analyst-recommendations-summary/{symbol}")
+@router.get("/get-ticker-analyst-recommendations-summary/{symbol}")
 async def get_analyst_recommendations_summary(
     symbol: str, user=Depends(get_current_profile)
 ):
@@ -728,4 +740,103 @@ async def get_ticker_history(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch fast info for '{symbol}': {str(e)}",
+        )
+
+def get_symbol_sparkline(
+    symbol: str,
+    period: str = "7d",
+    interval: str = "1d",
+) -> list[SparklinePoint]:
+    try:
+        ticker = yf.Ticker(symbol)
+        history = ticker.history(period=period, interval=interval)
+
+        if history.empty:
+            return []
+
+        history = history.reset_index()
+
+        points: list[SparklinePoint] = []
+
+        for _, row in history.iterrows():
+            timestamp = row.get("Date") or row.get("Datetime")
+            close = row.get("Close")
+
+            if timestamp is None or close is None:
+                continue
+
+            points.append(
+                SparklinePoint(
+                    timestamp=timestamp.isoformat(),
+                    close=float(close),
+                )
+            )
+
+        return points
+    except Exception:
+        return []
+    
+@router.get(
+    "/sparkline",
+    response_model=MultiTickerSparklineResponse,
+    description="Get minimal sparkline chart data for one or more ticker symbols.",
+)
+async def get_ticker_sparklines(
+    symbols: str = Query(
+        ...,
+        description="Comma-separated list of ticker symbols, e.g. AAPL,MSFT,NVDA",
+    ),
+    period: str = Query(
+        "7d",
+        description="History period, e.g. 1y, 1mo, max, 2y, 5d, 1d, 3mo, 6mo, 5y, ytd",
+    ),
+    interval: str = Query(
+        "1d",
+        description="History interval, e.g. 1mo, 60m, 1m, 5m, 90m, 5d, 30m, 1d, 3mo, 1wk, 15m, 1h, 2m (Intraday data cannot extend last 60 days)",
+    ),
+    user=Depends(get_current_profile),
+):
+    symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+
+    if not symbol_list:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one symbol must be provided.",
+        )
+
+    if len(symbol_list) > 25:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A maximum of 25 symbols can be requested at once.",
+        )
+
+    try:
+        results: list[TickerSparklineResponse] = []
+
+        for symbol in symbol_list:
+            points = get_symbol_sparkline(
+                symbol=symbol,
+                period=period,
+                interval=interval,
+            )
+
+            results.append(
+                TickerSparklineResponse(
+                    symbol=symbol,
+                    points=points,
+                )
+            )
+
+        return MultiTickerSparklineResponse(
+            period=period,
+            interval=interval,
+            results=results,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch sparkline data: {str(e)}",
         )

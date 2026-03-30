@@ -52,7 +52,7 @@ from app.utils.global_variables import (
 from app.core.db import supabase_client
 
 
-router = APIRouter(prefix="/me", tags=["me"])
+router = APIRouter(prefix="/me", tags=["Me"])
 
 
 # Authenticated: Get my a logged in user's profile

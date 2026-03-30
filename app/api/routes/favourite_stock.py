@@ -10,7 +10,7 @@ from app.services.user_profile_service import get_user_profile_by_auth
 import yfinance as yf
 
 
-router = APIRouter(prefix="/favourite-stocks", tags=["favourite stocks"])
+router = APIRouter(prefix="/favourite-stocks", tags=["Favourite Stocks"])
 
 
 @router.post("/", response_model=FavouriteStock)

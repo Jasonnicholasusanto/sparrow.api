@@ -8,7 +8,7 @@ from app.services.auth import login_user, signup_user
 logger = logging.getLogger(__name__)
 
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
 @router.post("/login")

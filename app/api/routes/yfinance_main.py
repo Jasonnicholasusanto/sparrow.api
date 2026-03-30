@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from app.api.routes.yfinance_routes import industry, market, screen, sector, stocks
 
-router = APIRouter(prefix="/yf", tags=["yfinance endpoints"])
+router = APIRouter(prefix="/yf", tags=["Yfinance Endpoints"])
 
 router.include_router(stocks.router)
 router.include_router(market.router)

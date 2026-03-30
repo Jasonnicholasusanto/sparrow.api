@@ -476,3 +476,19 @@ class TickerHistory(BaseModel):
     stock_splits: float = Field(
         ..., validation_alias="Stock Splits", serialization_alias="stock_splits"
     )
+
+
+class SparklinePoint(BaseModel):
+    timestamp: str
+    close: float
+
+
+class TickerSparklineResponse(BaseModel):
+    symbol: str
+    points: List[SparklinePoint] = Field(default_factory=list)
+
+
+class MultiTickerSparklineResponse(BaseModel):
+    period: str
+    interval: str
+    results: List[TickerSparklineResponse] = Field(default_factory=list)

@@ -59,7 +59,7 @@ from app.services.watchlist_service import (
 )
 
 
-router = APIRouter(prefix="/watchlists", tags=["watchlists"])
+router = APIRouter(prefix="/watchlists", tags=["Watchlists"])
 
 
 @router.get("/types", response_model=list[str])

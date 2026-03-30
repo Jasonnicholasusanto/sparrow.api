@@ -26,7 +26,7 @@ from app.services.user_profile_service import (
 )
 
 
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(prefix="/users", tags=["Users"])
 
 
 # Public: Get a profile by username
