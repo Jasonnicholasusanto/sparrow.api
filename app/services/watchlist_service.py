@@ -1130,7 +1130,7 @@ def validate_watchlist_allocation(
                     f"are allowed when watchlist allocation_type is None."
                 )
 
-    elif allocation_type == "quantity":
+    elif allocation_type == "unit":
         for item in items:
             if item.percentage is not None:
                 raise ValueError(
