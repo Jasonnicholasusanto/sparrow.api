@@ -14,6 +14,7 @@ from app.models.watchlist_bookmark import WatchlistBookmark
 from app.models.watchlist_item import WatchlistItem
 from app.models.watchlist_share import WatchlistShare
 from app.schemas.watchlist import (
+    StockAllocationType,
     WatchlistCreate,
     WatchlistDetailOut,
     WatchlistForkOut,
@@ -1109,39 +1110,27 @@ def validate_watchlist_allocation(
 
     allocation_type = watchlist_data.allocation_type
 
-    if allocation_type == "percentage":
+    if allocation_type == StockAllocationType.PERCENTAGE:
+        sum = 0
         for item in items:
-            if item.quantity is not None:
-                raise ValueError(
-                    f"Invalid item {item.symbol}: quantity is not allowed when "
-                    f"watchlist allocation_type is 'percentage'."
-                )
-            if item.percentage is None:
-                raise ValueError(
-                    f"Invalid item {item.symbol}: percentage must be provided when "
-                    f"watchlist allocation_type is 'percentage'."
-                )
+            if item.quantity is None or not (0 < item.allocation <= 100):
+                raise ValueError(f"Invalid allocation value for percentage-based watchlist: {item.allocation}. Must be > 0 and <= 100.")
+            sum += item.allocation
+
+        if sum > 100:
+            raise ValueError(f"Total allocation percentage cannot exceed 100%. Current sum: {sum}%.")
+        
+        return
+        
+    elif allocation_type == StockAllocationType.UNIT:
+        for item in items:
+            if item.quantity is None or item.quantity <= 0:
+                raise ValueError(f"Invalid quantity for unit-based watchlist: {item.quantity}. Must be a positive integer.")
+
+        return
 
     elif allocation_type is None:
-        for item in items:
-            if item.percentage is not None or item.quantity is not None:
-                raise ValueError(
-                    f"Invalid item {item.symbol}: neither percentage nor quantity "
-                    f"are allowed when watchlist allocation_type is None."
-                )
-
-    elif allocation_type == "unit":
-        for item in items:
-            if item.percentage is not None:
-                raise ValueError(
-                    f"Invalid item {item.symbol}: percentage is not allowed when "
-                    f"watchlist allocation_type is 'quantity'."
-                )
-            if item.quantity is None:
-                raise ValueError(
-                    f"Invalid item {item.symbol}: quantity must be provided when "
-                    f"watchlist allocation_type is 'quantity'."
-                )
+        raise ValueError(f"Invalid allocation_type on watchlist: {allocation_type}. Must be 'percentage' or 'unit'.")
 
     else:
         raise ValueError(f"Unknown allocation_type: {allocation_type}")
