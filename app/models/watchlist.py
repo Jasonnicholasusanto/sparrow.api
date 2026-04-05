@@ -14,7 +14,6 @@ from app.schemas.watchlist import StockAllocationType, WatchlistVisibility
 class Watchlist(SQLModel, table=True):
     """
     ORM mapping for public.watchlist.
-    Mirrors your SQL DDL; does not attempt to create the enum type.
     """
 
     __tablename__ = "watchlist"

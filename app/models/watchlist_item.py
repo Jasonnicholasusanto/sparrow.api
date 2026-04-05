@@ -11,7 +11,6 @@ from sqlmodel import SQLModel, Field
 class WatchlistItem(SQLModel, table=True):
     """
     ORM mapping for public.watchlist_item.
-    Mirrors your SQL DDL; does not attempt to create the table.
     """
 
     __tablename__ = "watchlist_item"
@@ -28,14 +27,12 @@ class WatchlistItem(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    # FK → public.watchlist.id
     watchlist_id: int = Field(foreign_key="public.watchlist.id", index=True)
 
     symbol: str = Field(index=True)
     exchange: str = Field(index=True)
     note: Optional[str] = None
     position: Optional[int] = None
-    percentage: Optional[float] = None
     quantity: Optional[float] = None
     purchase_price: Optional[float] = None
 

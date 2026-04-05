@@ -11,7 +11,7 @@ from app.schemas.point_rule import PointRuleSource
 class PointRule(SQLModel, table=True):
     """
     ORM mapping for public.point_rule (id BIGSERIAL PK).
-    Managed by your DB; this model is read/write but does not create the table.
+    Managed by DB; this model is read/write but does not create the table.
     """
 
     __tablename__ = "point_rule"

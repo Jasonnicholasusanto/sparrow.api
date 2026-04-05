@@ -8,7 +8,6 @@ from sqlalchemy.dialects import postgresql
 class WatchlistShare(SQLModel, table=True):
     """
     ORM mapping for public.watchlist_share.
-    Mirrors your SQL DDL; does not attempt to create the table.
     """
 
     __tablename__ = "watchlist_share"
