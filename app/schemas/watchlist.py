@@ -11,7 +11,6 @@ from app.schemas.watchlist_item import WatchlistItemBase, WatchlistItemOut
 
 
 class WatchlistVisibility(str, Enum):
-    # If your DB enum also includes "unlisted", just add it here.
     PRIVATE = "private"
     PUBLIC = "public"
     SHARED = "shared"

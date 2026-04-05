@@ -58,7 +58,7 @@ class Settings(BaseSettings):
 
     # Google authentication
     # Where the OAuth provider should send users back to after consent.
-    # Set this to your FRONTEND callback if the client will call supabase.auth.getSession().
+    # Set this to FRONTEND callback if the client will call supabase.auth.getSession().
     # Or set it to a BACKEND route if you'll exchange the code server-side.
     # AUTH_CALLBACK_URL: str
 

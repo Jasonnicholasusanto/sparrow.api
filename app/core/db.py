@@ -9,7 +9,7 @@ engine = create_engine(str(settings.SQLALCHEMY_DATABASE_URI))
 
 def get_db() -> Generator[Session, None]:
     # This is a standard FastAPI dependency.
-    # It opens a SQLAlchemy/SQLModel session to your Supabase database and automatically closes it after the request finishes.
+    # It opens a SQLAlchemy/SQLModel session to the Supabase database and automatically closes it after the request finishes.
     with Session(engine) as session:
         yield session
 
