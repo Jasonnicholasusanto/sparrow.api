@@ -195,8 +195,6 @@ def create_watchlist(
         watchlist_data = payload.watchlist_data
         items = payload.items
 
-        print(f"Received create_watchlist request with data: {watchlist_data} and items: {items}")
-
         # 1. Validate allocation type consistency
         validate_watchlist_allocation(watchlist_data, items)
 
