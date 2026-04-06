@@ -92,11 +92,6 @@ class WatchlistOut(WatchlistBase):
     items: Optional[List[WatchlistItemOut]] = None
 
 
-class WatchlistDetailOut(BaseModel):
-    watchlist: WatchlistOut
-    items: List[WatchlistItemOut]
-
-
 class WatchlistForkOut(BaseModel):
     """
     Response model when a watchlist is forked.
