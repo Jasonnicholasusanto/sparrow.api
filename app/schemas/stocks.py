@@ -554,3 +554,12 @@ class MultiTickerSparklineResponse(BaseModel):
     period: str
     interval: str
     results: List[TickerSparklineResponse] = Field(default_factory=list)
+
+
+class TickerMarketSnapshotResponse(BaseModel):
+    symbol: str
+    lastPrice: float | None = None
+    currency: str | None = None
+    previousClose: float | None = None
+    regularMarketChange: float | None = None
+    regularMarketChangePercent: float | None = None

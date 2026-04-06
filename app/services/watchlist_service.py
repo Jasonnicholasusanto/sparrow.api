@@ -1,7 +1,7 @@
 from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Dict, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Union
 import uuid
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
@@ -13,6 +13,7 @@ from app.models.watchlist import Watchlist
 from app.models.watchlist_bookmark import WatchlistBookmark
 from app.models.watchlist_item import WatchlistItem
 from app.models.watchlist_share import WatchlistShare
+from app.schemas.stocks import TickerFastInfoResponse, TickersRequest
 from app.schemas.watchlist import (
     StockAllocationType,
     WatchlistCreate,
@@ -31,6 +32,10 @@ from app.schemas.watchlist_item import (
     WatchlistItemUpdate,
 )
 from app.schemas.watchlist_share import WatchlistShareCreate
+import yfinance as yf
+
+from app.services.yfinance_service import fetch_ticker_market_snapshots
+from app.utils.global_variables import WATCHLIST_GROUP_KEYS
 
 
 def search_public_watchlists_by_name(
@@ -204,6 +209,153 @@ def get_all_user_related_watchlists(
             "bookmarked": len(bookmarked_watchlists),
         },
     }
+
+def enrich_user_watchlists_with_market_snapshots(user_watchlists: dict) -> dict:
+    symbols = [
+        item.symbol
+        for key in WATCHLIST_GROUP_KEYS
+        for watchlist in user_watchlists.get(key, [])
+        for item in watchlist.items
+        if item.symbol
+    ]
+
+    snapshot_map = fetch_ticker_market_snapshots(symbols)
+
+    return {
+        "created": [
+            {
+                **watchlist.model_dump(),
+                "items": [
+                    {
+                        **item.model_dump(),
+                        "tickerDetails": snapshot_map.get((item.symbol or "").upper()),
+                    }
+                    for item in watchlist.items
+                ],
+            }
+            for watchlist in user_watchlists.get("created", [])
+        ],
+        "forked": [
+            {
+                **watchlist.model_dump(),
+                "items": [
+                    {
+                        **item.model_dump(),
+                        "tickerDetails": snapshot_map.get((item.symbol or "").upper()),
+                    }
+                    for item in watchlist.items
+                ],
+            }
+            for watchlist in user_watchlists.get("forked", [])
+        ],
+        "shared": [
+            {
+                **watchlist.model_dump(),
+                "items": [
+                    {
+                        **item.model_dump(),
+                        "tickerDetails": snapshot_map.get((item.symbol or "").upper()),
+                    }
+                    for item in watchlist.items
+                ],
+            }
+            for watchlist in user_watchlists.get("shared", [])
+        ],
+        "bookmarked": [
+            {
+                **watchlist.model_dump(),
+                "items": [
+                    {
+                        **item.model_dump(),
+                        "tickerDetails": snapshot_map.get((item.symbol or "").upper()),
+                    }
+                    for item in watchlist.items
+                ],
+            }
+            for watchlist in user_watchlists.get("bookmarked", [])
+        ],
+        "total_count": user_watchlists.get("total_count", 0),
+        "counts": user_watchlists.get("counts", {}),
+    }
+
+def enrich_user_watchlists_with_fast_info(user_watchlists: dict) -> dict:
+    symbols: list[str] = []
+
+    for group_key in WATCHLIST_GROUP_KEYS:
+        watchlists = user_watchlists.get(group_key, [])
+        for watchlist in watchlists:
+            for item in watchlist.items:
+                if item.symbol:
+                    symbols.append(item.symbol)
+
+    ticker_map = fetch_tickers_fast_info(symbols)
+
+    enriched = {
+        "created": [],
+        "forked": [],
+        "shared": [],
+        "bookmarked": [],
+        "total_count": user_watchlists.get("total_count", 0),
+        "counts": user_watchlists.get("counts", {}),
+    }
+
+    for group_key in WATCHLIST_GROUP_KEYS:
+        watchlists = user_watchlists.get(group_key, [])
+
+        for watchlist in watchlists:
+            watchlist_data = watchlist.model_dump()
+
+            enriched_items = []
+            for item in watchlist.items:
+                item_data = item.model_dump()
+                symbol = (item.symbol or "").upper()
+                item_data["fast_info"] = ticker_map.get(symbol)
+                enriched_items.append(item_data)
+
+            watchlist_data["items"] = enriched_items
+            enriched[group_key].append(watchlist_data)
+
+    return enriched
+
+def fetch_tickers_fast_info(symbols: TickersRequest) -> dict[str, Any]:
+    if not symbols:
+        return {}
+
+    normalized_symbols = [
+        symbol.strip().upper()
+        for symbol in symbols
+        if symbol and symbol.strip()
+    ]
+
+    if not normalized_symbols:
+        return {}
+
+    try:
+        tickers_data = yf.Tickers(" ".join(normalized_symbols))
+        results: dict[str, Any] = {}
+
+        for symbol in normalized_symbols:
+            try:
+                ticker = tickers_data.tickers.get(symbol)
+                if not ticker:
+                    results[symbol] = {"error": f"Ticker '{symbol}' not found"}
+                    continue
+
+                fi = dict(ticker.fast_info or {})
+                results[symbol] = TickerFastInfoResponse(
+                    symbol=symbol,
+                    **fi,
+                )
+            except Exception as inner_e:
+                results[symbol] = {"error": str(inner_e)}
+
+        return results
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch ticker fast info: {str(e)}",
+        )
 
 
 def get_watchlists_shared_with_user(
