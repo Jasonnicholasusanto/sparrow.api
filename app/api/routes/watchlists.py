@@ -6,6 +6,9 @@ from app.api.dependencies.profile import get_current_profile
 from app.api.deps import SessionDep
 from app.schemas.watchlist import (
     StockAllocationType,
+    UserWatchlistsGroupedResultsOut,
+    UserWatchlistsResponseOut,
+    WatchlistCountsOut,
     WatchlistForkOut,
     WatchlistOut,
     WatchlistPublicOut,
@@ -103,24 +106,31 @@ def get_my_watchlists(
     )
 
     if not user_watchlists:
-        return {
-            "limit": limit,
-            "offset": offset,
-            "results": [],
-        }
+        return UserWatchlistsResponseOut(
+            limit=limit, 
+            offset=offset, 
+            results=UserWatchlistsGroupedResultsOut(
+                created=[],
+                forked=[],
+                shared=[],
+                bookmarked=[],
+                total_count=0,
+                counts=WatchlistCountsOut(owned=0, forked=0, shared=0, bookmarked=0)
+            )
+        )
 
     # 2. Retrieve ticker information for all items in these watchlists
     enriched_watchlists = enrich_user_watchlists_with_market_snapshots(user_watchlists)
 
     # 3. Return enriched watchlists with pagination metadata
-    return {
-        "limit": limit,
-        "offset": offset,
-        "results": enriched_watchlists,
-    }
+    return UserWatchlistsResponseOut(
+        limit=limit,
+        offset=offset,
+        results=UserWatchlistsGroupedResultsOut.model_validate(enriched_watchlists, from_attributes=True),
+    )
 
 
-@router.get("/user/@{username}")
+@router.get("/user/@{username}", response_model=UserWatchlistsResponseOut)
 def get_public_watchlists_by_username(
     username: str,
     db: SessionDep,
@@ -140,13 +150,32 @@ def get_public_watchlists_by_username(
     profile = get_user_profile_by_username(db, username=username)
 
     # 1. Search for public watchlists by username
-    watchlists = get_user_public_watchlists(
-        db, user_profile_id=profile.id, limit=limit, offset=offset
+    watchlists = get_all_user_related_watchlists(
+        db, user_profile_id=profile.id, limit=limit, offset=offset, is_public_only=True
     )
-    if not watchlists:
-        return WatchlistsDetail(watchlists=[])
 
-    return watchlists
+    if not watchlists:
+        return UserWatchlistsResponseOut(
+            limit=limit, 
+            offset=offset, 
+            results=UserWatchlistsGroupedResultsOut(
+                created=[],
+                forked=[],
+                shared=[],
+                bookmarked=[],
+                total_count=0,
+                counts=WatchlistCountsOut(owned=0, forked=0, shared=0, bookmarked=0)
+            )
+        )
+    
+    # 2. Retrieve ticker information for all items in these watchlists
+    enriched_watchlists = enrich_user_watchlists_with_market_snapshots(watchlists)
+    
+    return UserWatchlistsResponseOut(
+        limit=limit,
+        offset=offset,
+        results=UserWatchlistsGroupedResultsOut.model_validate(enriched_watchlists, from_attributes=True)
+    )
 
 
 @router.get("/{watchlist_id}/items", response_model=list[WatchlistItemOut])

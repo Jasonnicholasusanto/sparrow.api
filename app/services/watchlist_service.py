@@ -16,6 +16,7 @@ from app.models.watchlist_share import WatchlistShare
 from app.schemas.stocks import TickerFastInfoResponse, TickersRequest
 from app.schemas.watchlist import (
     StockAllocationType,
+    UserWatchlistsGroupedResultsOut,
     WatchlistCreate,
     WatchlistDetailOut,
     WatchlistForkOut,
@@ -90,13 +91,134 @@ def get_user_public_watchlists(
         for watchlist in watchlists
     ]
 
+# def get_all_user_related_watchlists(
+#     session,
+#     *,
+#     user_profile_id: uuid.UUID,
+#     limit: int = 50,
+#     offset: int = 0,
+# ) -> dict:
+#     """
+#     Fetch all watchlists associated with a user, including:
+#       1. Watchlists the user created (originals),
+#       2. Watchlists the user forked from others,
+#       3. Watchlists shared with the user,
+#       4. Watchlists the user bookmarked.
+
+#     Also attaches watchlist_items for each returned watchlist.
+#     """
+
+#     # 1. Watchlists CREATED by the user (excluding forks)
+#     owned_stmt = (
+#         select(Watchlist)
+#         .where(
+#             Watchlist.user_id == user_profile_id,
+#             Watchlist.forked_from_id.is_(None),
+#         )
+#         .order_by(Watchlist.created_at.desc())
+#     )
+#     owned_watchlists = list(session.exec(owned_stmt).all())
+
+#     # 2. Watchlists FORKED by the user
+#     forked_stmt = (
+#         select(Watchlist)
+#         .where(
+#             Watchlist.user_id == user_profile_id,
+#             Watchlist.forked_from_id.is_not(None),
+#         )
+#         .order_by(Watchlist.created_at.desc())
+#     )
+#     forked_watchlists = list(session.exec(forked_stmt).all())
+
+#     # 3. Watchlists SHARED with the user
+#     shared_stmt = (
+#         select(Watchlist)
+#         .join(WatchlistShare, WatchlistShare.watchlist_id == Watchlist.id)
+#         .where(WatchlistShare.user_id == user_profile_id)
+#         .order_by(Watchlist.created_at.desc())
+#     )
+#     shared_watchlists = list(session.exec(shared_stmt).all())
+
+#     # 4. Watchlists BOOKMARKED by the user
+#     bookmarked_stmt = (
+#         select(Watchlist)
+#         .join(WatchlistBookmark, WatchlistBookmark.watchlist_id == Watchlist.id)
+#         .where(WatchlistBookmark.user_id == user_profile_id)
+#         .order_by(Watchlist.created_at.desc())
+#     )
+#     bookmarked_watchlists = list(session.exec(bookmarked_stmt).all())
+
+#     # Apply pagination to each subset
+#     if limit:
+#         owned_watchlists = owned_watchlists[offset : offset + limit]
+#         forked_watchlists = forked_watchlists[offset : offset + limit]
+#         shared_watchlists = shared_watchlists[offset : offset + limit]
+#         bookmarked_watchlists = bookmarked_watchlists[offset : offset + limit]
+
+#     # Collect all unique watchlist IDs from all categories
+#     all_watchlists = (
+#         owned_watchlists
+#         + forked_watchlists
+#         + shared_watchlists
+#         + bookmarked_watchlists
+#     )
+
+#     watchlist_ids = list({w.id for w in all_watchlists})
+
+#     # Fetch all items in one query
+#     items_by_watchlist_id: dict[int, list[WatchlistItem]] = defaultdict(list)
+
+#     if watchlist_ids:
+#         items_stmt = (
+#             select(WatchlistItem)
+#             .where(WatchlistItem.watchlist_id.in_(watchlist_ids))
+#             .order_by(
+#                 WatchlistItem.watchlist_id,
+#                 WatchlistItem.position.asc(),
+#                 WatchlistItem.id.asc(),
+#             )
+#         )
+
+#         items = list(session.exec(items_stmt).all())
+
+#         for item in items:
+#             items_by_watchlist_id[item.watchlist_id].append(item)
+
+#     def build_watchlist_out(w: Watchlist) -> WatchlistOut:
+#         base = WatchlistOut.model_validate(w, from_attributes=True).model_dump()
+
+#         base["items"] = [
+#             WatchlistItemOut.model_validate(item, from_attributes=True)
+#             for item in items_by_watchlist_id.get(w.id, [])
+#         ]
+
+#         return WatchlistOut(**base)
+
+#     return {
+#         "created": [build_watchlist_out(w) for w in owned_watchlists],
+#         "forked": [build_watchlist_out(w) for w in forked_watchlists],
+#         "shared": [build_watchlist_out(w) for w in shared_watchlists],
+#         "bookmarked": [build_watchlist_out(w) for w in bookmarked_watchlists],
+#         "total_count": len(owned_watchlists)
+#         + len(forked_watchlists)
+#         + len(shared_watchlists)
+#         + len(bookmarked_watchlists),
+#         "counts": {
+#             "owned": len(owned_watchlists),
+#             "forked": len(forked_watchlists),
+#             "shared": len(shared_watchlists),
+#             "bookmarked": len(bookmarked_watchlists),
+#         },
+#     }
+
 def get_all_user_related_watchlists(
     session,
     *,
     user_profile_id: uuid.UUID,
     limit: int = 50,
     offset: int = 0,
-) -> dict:
+    is_public_only: bool = False,
+) -> UserWatchlistsGroupedResultsOut:
     """
     Fetch all watchlists associated with a user, including:
       1. Watchlists the user created (originals),
@@ -104,8 +226,14 @@ def get_all_user_related_watchlists(
       3. Watchlists shared with the user,
       4. Watchlists the user bookmarked.
 
+    If is_public_only is True, only PUBLIC watchlists are returned.
     Also attaches watchlist_items for each returned watchlist.
     """
+
+    def apply_visibility_filters(stmt):
+        if is_public_only:
+            stmt = stmt.where(Watchlist.visibility == "public")
+        return stmt
 
     # 1. Watchlists CREATED by the user (excluding forks)
     owned_stmt = (
@@ -116,6 +244,7 @@ def get_all_user_related_watchlists(
         )
         .order_by(Watchlist.created_at.desc())
     )
+    owned_stmt = apply_visibility_filters(owned_stmt)
     owned_watchlists = list(session.exec(owned_stmt).all())
 
     # 2. Watchlists FORKED by the user
@@ -127,6 +256,7 @@ def get_all_user_related_watchlists(
         )
         .order_by(Watchlist.created_at.desc())
     )
+    forked_stmt = apply_visibility_filters(forked_stmt)
     forked_watchlists = list(session.exec(forked_stmt).all())
 
     # 3. Watchlists SHARED with the user
@@ -136,6 +266,7 @@ def get_all_user_related_watchlists(
         .where(WatchlistShare.user_id == user_profile_id)
         .order_by(Watchlist.created_at.desc())
     )
+    shared_stmt = apply_visibility_filters(shared_stmt)
     shared_watchlists = list(session.exec(shared_stmt).all())
 
     # 4. Watchlists BOOKMARKED by the user
@@ -145,6 +276,7 @@ def get_all_user_related_watchlists(
         .where(WatchlistBookmark.user_id == user_profile_id)
         .order_by(Watchlist.created_at.desc())
     )
+    bookmarked_stmt = apply_visibility_filters(bookmarked_stmt)
     bookmarked_watchlists = list(session.exec(bookmarked_stmt).all())
 
     # Apply pagination to each subset
@@ -184,99 +316,147 @@ def get_all_user_related_watchlists(
             items_by_watchlist_id[item.watchlist_id].append(item)
 
     def build_watchlist_out(w: Watchlist) -> WatchlistOut:
-        base = WatchlistOut.model_validate(w, from_attributes=True).model_dump()
+        watchlist_out = WatchlistOut.model_validate(w, from_attributes=True)
 
-        base["items"] = [
+        items = [
             WatchlistItemOut.model_validate(item, from_attributes=True)
             for item in items_by_watchlist_id.get(w.id, [])
         ]
 
-        return WatchlistOut(**base)
+        return watchlist_out.model_copy(update={"items": items})
+    
+    created_results = [build_watchlist_out(w) for w in owned_watchlists]
+    forked_results = [build_watchlist_out(w) for w in forked_watchlists]
+    shared_results = [build_watchlist_out(w) for w in shared_watchlists]
+    bookmarked_results = [build_watchlist_out(w) for w in bookmarked_watchlists]
 
-    return {
-        "created": [build_watchlist_out(w) for w in owned_watchlists],
-        "forked": [build_watchlist_out(w) for w in forked_watchlists],
-        "shared": [build_watchlist_out(w) for w in shared_watchlists],
-        "bookmarked": [build_watchlist_out(w) for w in bookmarked_watchlists],
-        "total_count": len(owned_watchlists)
-        + len(forked_watchlists)
-        + len(shared_watchlists)
-        + len(bookmarked_watchlists),
-        "counts": {
-            "owned": len(owned_watchlists),
-            "forked": len(forked_watchlists),
-            "shared": len(shared_watchlists),
-            "bookmarked": len(bookmarked_watchlists),
+    return UserWatchlistsGroupedResultsOut(
+        created=created_results,
+        forked=forked_results,
+        shared=shared_results,
+        bookmarked=bookmarked_results,
+        total_count=len(created_results)
+        + len(forked_results)
+        + len(shared_results)
+        + len(bookmarked_results),
+        counts={
+            "owned": len(created_results),
+            "forked": len(forked_results),
+            "shared": len(shared_results),
+            "bookmarked": len(bookmarked_results),
         },
-    }
+    )
 
-def enrich_user_watchlists_with_market_snapshots(user_watchlists: dict) -> dict:
+# def enrich_user_watchlists_with_market_snapshots(user_watchlists: UserWatchlistsGroupedResultsOut) -> dict:
+#     symbols = [
+#         item.symbol
+#         for key in WATCHLIST_GROUP_KEYS
+#         for watchlist in user_watchlists.get(key, [])
+#         for item in watchlist.items
+#         if item.symbol
+#     ]
+
+#     snapshot_map = fetch_ticker_market_snapshots(symbols)
+
+#     return {
+#         "created": [
+#             {
+#                 **watchlist.model_dump(),
+#                 "items": [
+#                     {
+#                         **item.model_dump(),
+#                         "tickerDetails": snapshot_map.get((item.symbol or "").upper()),
+#                     }
+#                     for item in watchlist.items
+#                 ],
+#             }
+#             for watchlist in user_watchlists.get("created", [])
+#         ],
+#         "forked": [
+#             {
+#                 **watchlist.model_dump(),
+#                 "items": [
+#                     {
+#                         **item.model_dump(),
+#                         "tickerDetails": snapshot_map.get((item.symbol or "").upper()),
+#                     }
+#                     for item in watchlist.items
+#                 ],
+#             }
+#             for watchlist in user_watchlists.get("forked", [])
+#         ],
+#         "shared": [
+#             {
+#                 **watchlist.model_dump(),
+#                 "items": [
+#                     {
+#                         **item.model_dump(),
+#                         "tickerDetails": snapshot_map.get((item.symbol or "").upper()),
+#                     }
+#                     for item in watchlist.items
+#                 ],
+#             }
+#             for watchlist in user_watchlists.get("shared", [])
+#         ],
+#         "bookmarked": [
+#             {
+#                 **watchlist.model_dump(),
+#                 "items": [
+#                     {
+#                         **item.model_dump(),
+#                         "tickerDetails": snapshot_map.get((item.symbol or "").upper()),
+#                     }
+#                     for item in watchlist.items
+#                 ],
+#             }
+#             for watchlist in user_watchlists.get("bookmarked", [])
+#         ],
+#         "total_count": user_watchlists.get("total_count", 0),
+#         "counts": user_watchlists.get("counts", {}),
+#     }
+
+def enrich_user_watchlists_with_market_snapshots(
+    user_watchlists: UserWatchlistsGroupedResultsOut,
+) -> UserWatchlistsGroupedResultsOut:
     symbols = [
         item.symbol
         for key in WATCHLIST_GROUP_KEYS
-        for watchlist in user_watchlists.get(key, [])
-        for item in watchlist.items
+        for watchlist in getattr(user_watchlists, key, [])
+        for item in (watchlist.items or [])
         if item.symbol
     ]
 
     snapshot_map = fetch_ticker_market_snapshots(symbols)
 
-    return {
-        "created": [
-            {
-                **watchlist.model_dump(),
-                "items": [
-                    {
-                        **item.model_dump(),
-                        "tickerDetails": snapshot_map.get((item.symbol or "").upper()),
-                    }
-                    for item in watchlist.items
-                ],
-            }
-            for watchlist in user_watchlists.get("created", [])
-        ],
-        "forked": [
-            {
-                **watchlist.model_dump(),
-                "items": [
-                    {
-                        **item.model_dump(),
-                        "tickerDetails": snapshot_map.get((item.symbol or "").upper()),
-                    }
-                    for item in watchlist.items
-                ],
-            }
-            for watchlist in user_watchlists.get("forked", [])
-        ],
-        "shared": [
-            {
-                **watchlist.model_dump(),
-                "items": [
-                    {
-                        **item.model_dump(),
-                        "tickerDetails": snapshot_map.get((item.symbol or "").upper()),
-                    }
-                    for item in watchlist.items
-                ],
-            }
-            for watchlist in user_watchlists.get("shared", [])
-        ],
-        "bookmarked": [
-            {
-                **watchlist.model_dump(),
-                "items": [
-                    {
-                        **item.model_dump(),
-                        "tickerDetails": snapshot_map.get((item.symbol or "").upper()),
-                    }
-                    for item in watchlist.items
-                ],
-            }
-            for watchlist in user_watchlists.get("bookmarked", [])
-        ],
-        "total_count": user_watchlists.get("total_count", 0),
-        "counts": user_watchlists.get("counts", {}),
-    }
+    def enrich_watchlists(watchlists: list[WatchlistOut]) -> list[WatchlistOut]:
+        enriched_watchlists: list[WatchlistOut] = []
+
+        for watchlist in watchlists:
+            enriched_items = [
+                WatchlistItemOut(
+                    **item.model_dump(exclude={"ticker_details"}),
+                    ticker_details=snapshot_map.get((item.symbol or "").upper()),
+                )
+                for item in (watchlist.items or [])
+            ]
+
+            enriched_watchlists.append(
+                WatchlistOut(
+                    **watchlist.model_dump(exclude={"items"}),
+                    items=enriched_items,
+                )
+            )
+
+        return enriched_watchlists
+
+    return UserWatchlistsGroupedResultsOut(
+        created=enrich_watchlists(user_watchlists.created),
+        forked=enrich_watchlists(user_watchlists.forked),
+        shared=enrich_watchlists(user_watchlists.shared),
+        bookmarked=enrich_watchlists(user_watchlists.bookmarked),
+        total_count=user_watchlists.total_count,
+        counts=user_watchlists.counts,
+    )
 
 def enrich_user_watchlists_with_fast_info(user_watchlists: dict) -> dict:
     symbols: list[str] = []
