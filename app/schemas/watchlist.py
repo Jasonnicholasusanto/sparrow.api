@@ -25,6 +25,7 @@ class StockAllocationType(str, Enum):
 
 
 class WatchlistBase(BaseModel):
+    id: int
     name: str = Field(min_length=1, max_length=100)
     description: Optional[str] = Field(default=None, max_length=500)
     visibility: WatchlistVisibility = WatchlistVisibility.PRIVATE.value
@@ -33,6 +34,10 @@ class WatchlistBase(BaseModel):
     fork_count: Optional[int] = 0
     original_author_id: Optional[UUID] = None
     allocation_type: StockAllocationType
+    user_id: UUID
+    is_default: bool = False
+    created_at: datetime
+    updated_at: datetime
 
 
 class WatchlistCreate(WatchlistBase):
@@ -50,16 +55,36 @@ class WatchlistUpdate(BaseModel):
 class WatchlistPublicOut(WatchlistBase):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
     user_id: UUID
     created_at: datetime
     updated_at: datetime
 
 
+class UserWatchlistsResponseOut(BaseModel):
+    limit: int
+    offset: int
+    results: UserWatchlistsGroupedResultsOut
+
+
+class UserWatchlistsGroupedResultsOut(BaseModel):
+    created: List[WatchlistOut]
+    forked: List[WatchlistOut]
+    shared: List[WatchlistOut]
+    bookmarked: List[WatchlistOut]
+    total_count: int
+    counts: WatchlistCountsOut
+
+
+class WatchlistCountsOut(BaseModel):
+    owned: int
+    forked: int
+    shared: int
+    bookmarked: int
+
+
 class WatchlistOut(WatchlistBase):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
     user_id: UUID
     is_default: bool
     created_at: datetime
@@ -69,7 +94,7 @@ class WatchlistOut(WatchlistBase):
 
 class WatchlistDetailOut(BaseModel):
     watchlist: WatchlistOut
-    items: List[WatchlistItemBase]
+    items: List[WatchlistItemOut]
 
 
 class WatchlistForkOut(BaseModel):
@@ -79,7 +104,7 @@ class WatchlistForkOut(BaseModel):
 
     message: str
     forked_watchlist: WatchlistOut
-    forked_items: Optional[List[WatchlistItemBase]] = None
+    forked_items: Optional[List[WatchlistItemOut]] = None
 
 
 class WatchlistForkListOut(BaseModel):

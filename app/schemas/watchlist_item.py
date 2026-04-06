@@ -12,7 +12,6 @@ class WatchlistItemBase(BaseModel):
     exchange: str = Field(min_length=1)
     note: Optional[str] = Field(default=None, max_length=1000)
     position: Optional[int] = Field(default=None, ge=0)
-    purchase_price: Optional[float] = Field(default=None, ge=0.0)
     quantity: Optional[float] = Field(default=None, ge=0.0)
     purchase_price: Optional[float] = Field(default=None, ge=0.0)
 
@@ -36,6 +35,14 @@ class WatchlistItemUpdate(BaseModel):
     purchase_price: Optional[float] = Field(default=None, ge=0.0)
 
 
+class WatchlistItemTickerDetails(BaseModel):
+    last_price: Optional[float] = None
+    currency: Optional[str] = None
+    previous_close: Optional[float] = None
+    regular_market_change: Optional[float] = None
+    regular_market_change_percent: Optional[float] = None
+
+
 class WatchlistItemOut(WatchlistItemBase):
     model_config = ConfigDict(from_attributes=True)
 
@@ -43,3 +50,4 @@ class WatchlistItemOut(WatchlistItemBase):
     watchlist_id: int
     created_at: datetime
     updated_at: datetime
+    ticker_details: Optional[WatchlistItemTickerDetails] = None

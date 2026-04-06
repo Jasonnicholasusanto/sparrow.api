@@ -5,10 +5,11 @@ from typing import Any
 import yfinance as yf
 
 from app.schemas.stocks import SearchQuoteEnrichedResponse, TickerMarketSnapshotResponse
+from app.schemas.watchlist_item import WatchlistItemTickerDetails
 from app.utils.functions import safe_json_float
 
 
-def build_ticker_market_snapshot(symbol: str, fi: dict[str, Any] | None) -> TickerMarketSnapshotResponse:
+def build_ticker_market_snapshot(symbol: str, fi: dict[str, Any] | None) -> WatchlistItemTickerDetails:
     fi = fi or {}
 
     last_price = safe_json_float(fi.get("lastPrice"))
@@ -30,16 +31,15 @@ def build_ticker_market_snapshot(symbol: str, fi: dict[str, Any] | None) -> Tick
         regular_market_change = safe_json_float(change)
         regular_market_change_percent = safe_json_float(pct)
 
-    return TickerMarketSnapshotResponse(
-        symbol=symbol.upper(),
-        lastPrice=safe_json_float(last_price),
+    return WatchlistItemTickerDetails(
+        last_price=safe_json_float(last_price),
         currency=fi.get("currency"),
-        previousClose=safe_json_float(previous_close),
-        regularMarketChange=safe_json_float(regular_market_change),
-        regularMarketChangePercent=safe_json_float(regular_market_change_percent),
+        previous_close=safe_json_float(previous_close),
+        regular_market_change=safe_json_float(regular_market_change),
+        regular_market_change_percent=safe_json_float(regular_market_change_percent),
     )
 
-def fetch_ticker_market_snapshots(symbols: list[str]) -> dict[str, TickerMarketSnapshotResponse | None]:
+def fetch_ticker_market_snapshots(symbols: list[str]) -> dict[str, WatchlistItemTickerDetails | None]:
     normalized_symbols = list(
         {
             symbol.strip().upper()
@@ -52,7 +52,7 @@ def fetch_ticker_market_snapshots(symbols: list[str]) -> dict[str, TickerMarketS
         return {}
 
     tickers_data = yf.Tickers(" ".join(normalized_symbols))
-    results: dict[str, TickerMarketSnapshotResponse | None] = {}
+    results: dict[str, WatchlistItemTickerDetails | None] = {}
 
     for symbol in normalized_symbols:
         try:
