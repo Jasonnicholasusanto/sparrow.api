@@ -24,6 +24,7 @@ from app.schemas.watchlist import (
     WatchlistVisibility,
 )
 from app.schemas.watchlist_bookmark import WatchlistBookmarkBase
+from app.schemas.watchlist_detail import WatchlistDetailUpdateRequest
 from app.schemas.watchlist_item import (
     WatchlistItemBase,
     WatchlistItemCreate,
@@ -519,6 +520,7 @@ def create_watchlist_for_user(
 def add_item_to_watchlist(
     session: Session,
     *,
+    watchlist_id: int,
     user_profile_id: uuid.UUID,
     item: WatchlistItemCreate,
 ) -> WatchlistItem:
@@ -529,7 +531,7 @@ def add_item_to_watchlist(
     # 1. Validate edit permissions
     user_access = user_can_edit_watchlist(
         session=session,
-        watchlist_id=item.watchlist_id,
+        watchlist_id=watchlist_id,
         user_id=user_profile_id,
     )
 
@@ -542,7 +544,7 @@ def add_item_to_watchlist(
     # 2. Prevent duplicate entries
     if watchlist_item_exists(
         session=session,
-        watchlist_id=item.watchlist_id,
+        watchlist_id=watchlist_id,
         symbol=item.symbol,
         exchange=item.exchange,
     ):
@@ -557,12 +559,12 @@ def add_item_to_watchlist(
         exchange=item.exchange,
         note=item.note,
         position=item.position,
-        watchlist_id=item.watchlist_id,
+        watchlist_id=watchlist_id,
     )
 
     return watchlist_item_crud.create(
         session=session,
-        watchlist_id=item.watchlist_id,
+        watchlist_id=watchlist_id,
         obj_in=item_in,
     )
 
@@ -602,60 +604,6 @@ def add_many_items_to_watchlist(
         WatchlistItemBase.model_validate(db_item, from_attributes=True)
         for db_item in db_items
     ]
-
-
-def update_watchlist_item(
-    session,
-    *,
-    item_id: int,
-    user_profile_id: uuid.UUID,
-    update_data: WatchlistItemUpdate,
-):
-    """
-    Update a watchlist item.
-    User must either own the watchlist or have edit access to it.
-    """
-    db_item = session.get(WatchlistItem, item_id)
-    if not db_item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Watchlist item not found.",
-        )
-
-    # Check if user can edit this watchlist
-    can_edit = user_can_edit_watchlist(
-        session=session,
-        watchlist_id=db_item.watchlist_id,
-        user_id=user_profile_id,
-    )
-
-    if not can_edit:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to edit this watchlist item.",
-        )
-
-    try:
-        updated_item = watchlist_item_crud.update(
-            session=session,
-            id=item_id,
-            obj_in=update_data,
-        )
-
-        if not updated_item:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Failed to update item.",
-            )
-
-        return updated_item
-
-    except Exception as e:
-        session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update watchlist item: {str(e)}",
-        )
 
 
 def delete_watchlist_item(
@@ -818,20 +766,26 @@ def update_watchlist_share_permission(
     )
 
     return updated_share
-
+    
 
 def update_user_watchlist(
     session,
     *,
     watchlist_id: int,
     owner_profile_id: uuid.UUID,
-    update_data: WatchlistUpdate,
+    update_data: WatchlistDetailUpdateRequest,
 ):
     """
     Update a user's watchlist.
     Only the owner of the watchlist may perform updates.
+
+    Behavior:
+    - If watchlist_data is provided, update watchlist fields.
+    - If items is provided, sync the watchlist items:
+        * update existing matching items
+        * create new items
+        * delete items omitted from the payload
     """
-    # 1. Fetch existing watchlist
     watchlist = watchlist_crud.get(session, id=watchlist_id)
     if not watchlist:
         raise HTTPException(
@@ -839,29 +793,79 @@ def update_user_watchlist(
             detail="Watchlist not found.",
         )
 
-    # 2. Verify ownership
     if str(watchlist.user_id) != str(owner_profile_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to update this watchlist.",
         )
 
-    # 3. Apply updates via CRUD
     try:
-        updated_watchlist = watchlist_crud.update(
-            session=session,
-            id=watchlist_id,
-            obj_in=update_data,
-        )
-
-        if not updated_watchlist:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Failed to update — watchlist not found.",
+        # 1. Update watchlist metadata if provided
+        if update_data.watchlist_data is not None:
+            updated_watchlist = watchlist_crud.update(
+                session=session,
+                id=watchlist_id,
+                obj_in=update_data.watchlist_data,
             )
+            if not updated_watchlist:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Failed to update — watchlist not found.",
+                )
+        else:
+            updated_watchlist = watchlist
+
+        # 2. Sync watchlist items if provided
+        if update_data.items is not None:
+            existing_items = session.execute(
+                select(WatchlistItem).where(WatchlistItem.watchlist_id == watchlist_id)
+            ).scalars().all()
+
+            # Key existing items by (symbol, exchange)
+            existing_map = {
+                (item.symbol.upper(), item.exchange.upper()): item
+                for item in existing_items
+            }
+
+            incoming_map = {
+                (item.symbol.upper(), item.exchange.upper()): item
+                for item in update_data.items
+            }
+
+            # 2a. Delete removed items
+            for key, db_item in existing_map.items():
+                if key not in incoming_map:
+                    session.delete(db_item)
+
+            # 2b. Update existing items / create new items
+            for key, incoming_item in incoming_map.items():
+                existing_item = existing_map.get(key)
+
+                if existing_item:
+                    existing_item.note = incoming_item.note
+                    existing_item.position = incoming_item.position
+                    existing_item.quantity = incoming_item.quantity
+                    existing_item.purchase_price = incoming_item.purchase_price
+                else:
+                    new_item = WatchlistItem(
+                        watchlist_id=watchlist_id,
+                        symbol=incoming_item.symbol,
+                        exchange=incoming_item.exchange,
+                        note=incoming_item.note,
+                        position=incoming_item.position,
+                        quantity=incoming_item.quantity,
+                        purchase_price=incoming_item.purchase_price,
+                    )
+                    session.add(new_item)
+
+        session.commit()
+        session.refresh(updated_watchlist)
 
         return updated_watchlist
 
+    except HTTPException:
+        session.rollback()
+        raise
     except Exception as e:
         session.rollback()
         raise HTTPException(

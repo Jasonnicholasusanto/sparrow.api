@@ -11,18 +11,16 @@ from app.schemas.watchlist import (
     WatchlistCountsOut,
     WatchlistForkOut,
     WatchlistOut,
-    WatchlistPublicOut,
     WatchlistUpdate,
     WatchlistVisibility,
 )
 from app.schemas.watchlist_detail import (
     WatchlistDetailCreateRequest,
+    WatchlistDetailUpdateRequest,
     WatchlistsDetail,
 )
 from app.schemas.watchlist_item import (
     WatchlistItemBase,
-    WatchlistItemCreate,
-    WatchlistItemCreateWithoutId,
     WatchlistItemOut,
     WatchlistItemUpdate,
 )
@@ -40,6 +38,7 @@ from app.services.watchlist_service import (
     delete_watchlist,
     delete_watchlist_item,
     enrich_user_watchlists_with_market_snapshots,
+    enrich_watchlists,
     fork_watchlist,
     fork_watchlist_custom,
     get_all_user_related_watchlists,
@@ -55,7 +54,6 @@ from app.services.watchlist_service import (
     share_watchlist_with_user,
     unbookmark_watchlist,
     update_user_watchlist,
-    update_watchlist_item,
     update_watchlist_share_permission,
     user_can_edit_watchlist,
     validate_watchlist_allocation,
@@ -246,16 +244,21 @@ def get_public_watchlists_by_name(
     id_list = [w.id for w in watchlists if w.id is not None]
     items_by_watchlist_id = load_items_for_watchlists(db, id_list)
 
-    results = [
+    item_loaded_watchlists = [
         WatchlistOut.model_validate(
             watchlist, from_attributes=True
         ).model_copy(
-            update={"items": [WatchlistItemBase.model_validate(item, from_attributes=True) for item in items_by_watchlist_id.get(watchlist.id, [])]}
+            update={"items": [WatchlistItemOut.model_validate(item, from_attributes=True) for item in items_by_watchlist_id.get(watchlist.id, [])]}
         )
         for watchlist in watchlists
     ]
 
-    return WatchlistsDetail(total=len(results), watchlists=results)
+    symbols = [item.symbol for items in items_by_watchlist_id.values() for item in items if item.symbol and item.exchange]
+    snapshot_map = fetch_ticker_market_snapshots(symbols)
+
+    enriched_watchlists = enrich_watchlists(item_loaded_watchlists, snapshot_map)    
+
+    return WatchlistsDetail(total=len(enriched_watchlists), watchlists=enriched_watchlists)
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
@@ -311,13 +314,15 @@ def create_watchlist(
 
 @router.post("/add-item")
 def add_watchlist_item_to_watchlist(
-    item: WatchlistItemCreate,
+    watchlist_id: int,
+    item: WatchlistItemBase,
     db: SessionDep,
     user=Depends(get_current_profile),
 ):
     # Add the item
     new_item = add_item_to_watchlist(
         session=db,
+        watchlist_id=watchlist_id,
         item=item,
         user_profile_id=user.id,
     )
@@ -327,11 +332,11 @@ def add_watchlist_item_to_watchlist(
 @router.post("/add-items/{watchlist_id}")
 def add_bulk_watchlist_items_to_watchlist(
     watchlist_id: int,
-    items: List[WatchlistItemCreateWithoutId],
+    items: List[WatchlistItemBase],
     db: SessionDep,
     user=Depends(get_current_profile),
 ):
-    # Validate edit permissions
+    # 1. Validate edit permissions
     user_access = user_can_edit_watchlist(
         session=db,
         watchlist_id=watchlist_id,
@@ -343,7 +348,7 @@ def add_bulk_watchlist_items_to_watchlist(
             detail="You do not have permission to edit this watchlist.",
         )
 
-    # 3. Check for duplicates within the provided items
+    # 2. Check for duplicates within the provided items
     watchlist_items_existing_symbols = set()
     for item in items:
         if watchlist_item_exists(
@@ -360,7 +365,7 @@ def add_bulk_watchlist_items_to_watchlist(
             detail=f"Symbols [{symbols_list}] already exists in this watchlist.",
         )
 
-    # 4. Add the items in bulk
+    # 3. Add the items in bulk
     new_items = add_many_items_to_watchlist(
         session=db,
         watchlist_id=watchlist_id,
@@ -501,7 +506,7 @@ def update_watchlist_share(
 @router.patch("/{watchlist_id}", response_model=WatchlistOut)
 def update_watchlist(
     watchlist_id: int,
-    watchlist_data: WatchlistUpdate,
+    watchlist_data: WatchlistDetailUpdateRequest,
     db: SessionDep,
     user=Depends(get_current_profile),
 ):
@@ -517,29 +522,28 @@ def update_watchlist(
         update_data=watchlist_data,
     )
 
-    return updated_watchlist
+    if not updated_watchlist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Watchlist not found or you do not have permission to edit it.",
+        )
+    
+    items_by_watchlist_id = load_items_for_watchlists(db, [updated_watchlist.id])
 
+    item_loaded_watchlists = [
+        WatchlistOut.model_validate(
+            updated_watchlist, from_attributes=True
+        ).model_copy(
+            update={"items": [WatchlistItemOut.model_validate(item, from_attributes=True) for item in items_by_watchlist_id.get(updated_watchlist.id, [])]}
+        )
+    ]
 
-@router.patch("/items/{item_id}", response_model=WatchlistItemBase)
-def update_watchlist_item_route(
-    item_id: int,
-    update_data: WatchlistItemUpdate,
-    db: SessionDep,
-    user=Depends(get_current_profile),
-):
-    """
-    Update an existing item in a watchlist.
-    User must own or have edit access to the watchlist.
-    """
-    # 2. Update item via service
-    updated_item = update_watchlist_item(
-        session=db,
-        item_id=item_id,
-        user_profile_id=user.id,
-        update_data=update_data,
-    )
+    symbols = [item.symbol for items in items_by_watchlist_id.values() for item in items if item.symbol and item.exchange]
+    snapshot_map = fetch_ticker_market_snapshots(symbols)
 
-    return updated_item
+    enriched_watchlists = enrich_watchlists(item_loaded_watchlists, snapshot_map)  
+
+    return enriched_watchlists[0]
 
 
 @router.post("/{watchlist_id}/bookmark", status_code=status.HTTP_201_CREATED)
