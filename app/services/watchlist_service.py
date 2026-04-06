@@ -519,6 +519,7 @@ def create_watchlist_for_user(
 def add_item_to_watchlist(
     session: Session,
     *,
+    watchlist_id: int,
     user_profile_id: uuid.UUID,
     item: WatchlistItemCreate,
 ) -> WatchlistItem:
@@ -529,7 +530,7 @@ def add_item_to_watchlist(
     # 1. Validate edit permissions
     user_access = user_can_edit_watchlist(
         session=session,
-        watchlist_id=item.watchlist_id,
+        watchlist_id=watchlist_id,
         user_id=user_profile_id,
     )
 
@@ -542,7 +543,7 @@ def add_item_to_watchlist(
     # 2. Prevent duplicate entries
     if watchlist_item_exists(
         session=session,
-        watchlist_id=item.watchlist_id,
+        watchlist_id=watchlist_id,
         symbol=item.symbol,
         exchange=item.exchange,
     ):
@@ -557,12 +558,12 @@ def add_item_to_watchlist(
         exchange=item.exchange,
         note=item.note,
         position=item.position,
-        watchlist_id=item.watchlist_id,
+        watchlist_id=watchlist_id,
     )
 
     return watchlist_item_crud.create(
         session=session,
-        watchlist_id=item.watchlist_id,
+        watchlist_id=watchlist_id,
         obj_in=item_in,
     )
 

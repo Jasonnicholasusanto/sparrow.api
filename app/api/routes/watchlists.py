@@ -311,13 +311,15 @@ def create_watchlist(
 
 @router.post("/add-item")
 def add_watchlist_item_to_watchlist(
-    item: WatchlistItemCreate,
+    watchlist_id: int,
+    item: WatchlistItemBase,
     db: SessionDep,
     user=Depends(get_current_profile),
 ):
     # Add the item
     new_item = add_item_to_watchlist(
         session=db,
+        watchlist_id=watchlist_id,
         item=item,
         user_profile_id=user.id,
     )
@@ -327,11 +329,11 @@ def add_watchlist_item_to_watchlist(
 @router.post("/add-items/{watchlist_id}")
 def add_bulk_watchlist_items_to_watchlist(
     watchlist_id: int,
-    items: List[WatchlistItemCreateWithoutId],
+    items: List[WatchlistItemBase],
     db: SessionDep,
     user=Depends(get_current_profile),
 ):
-    # Validate edit permissions
+    # 1. Validate edit permissions
     user_access = user_can_edit_watchlist(
         session=db,
         watchlist_id=watchlist_id,
@@ -343,7 +345,7 @@ def add_bulk_watchlist_items_to_watchlist(
             detail="You do not have permission to edit this watchlist.",
         )
 
-    # 3. Check for duplicates within the provided items
+    # 2. Check for duplicates within the provided items
     watchlist_items_existing_symbols = set()
     for item in items:
         if watchlist_item_exists(
@@ -360,7 +362,7 @@ def add_bulk_watchlist_items_to_watchlist(
             detail=f"Symbols [{symbols_list}] already exists in this watchlist.",
         )
 
-    # 4. Add the items in bulk
+    # 3. Add the items in bulk
     new_items = add_many_items_to_watchlist(
         session=db,
         watchlist_id=watchlist_id,
