@@ -16,7 +16,6 @@ from app.schemas.watchlist import (
     WatchlistVisibility,
 )
 from app.schemas.watchlist_detail import (
-    WatchlistDetail,
     WatchlistDetailCreateRequest,
     WatchlistsDetail,
 )
@@ -45,7 +44,6 @@ from app.services.watchlist_service import (
     fork_watchlist_custom,
     get_all_user_related_watchlists,
     get_user_bookmarked_watchlists,
-    get_user_public_watchlists,
     get_watchlist_items_securely,
     get_watchlist_lineage,
     get_watchlists_shared_with_user,
@@ -63,6 +61,7 @@ from app.services.watchlist_service import (
     validate_watchlist_allocation,
     watchlist_item_exists,
 )
+from app.services.yfinance_service import fetch_ticker_market_snapshots
 
 
 router = APIRouter(prefix="/watchlists", tags=["Watchlists"])
@@ -199,9 +198,18 @@ def get_watchlist_items_route(
             watchlist_id=watchlist_id,
             user_profile_id=user.id,
         )
-        return [
-            WatchlistItemOut.model_validate(it, from_attributes=True) for it in items
+        symbols = [item.symbol for item in items if item.symbol and item.exchange]
+        snapshot_map = fetch_ticker_market_snapshots(symbols)
+        
+        enriched_items = [
+            WatchlistItemOut(
+                **item.model_dump(exclude={"ticker_details"}),
+                ticker_details=snapshot_map.get((item.symbol or "").upper()),
+            )
+            for item in items
         ]
+
+        return enriched_items
     except HTTPException:
         raise
     except Exception as e:
@@ -230,26 +238,24 @@ def get_public_watchlists_by_name(
     watchlists = search_public_watchlists_by_name(
         db, name=name, limit=limit, offset=offset
     )
+
     if not watchlists:
-        return WatchlistsDetail(watchlists=[])
+        return WatchlistsDetail(total=0, watchlists=[])
 
     # Batch-load items to avoid N+1
     id_list = [w.id for w in watchlists if w.id is not None]
-    items_map = load_items_for_watchlists(db, id_list)
+    items_by_watchlist_id = load_items_for_watchlists(db, id_list)
 
     results = [
-        WatchlistDetail(
-            watchlist=WatchlistPublicOut.model_validate(w, from_attributes=True),
-            watchlist_items=[
-                WatchlistItemBase.model_validate(i, from_attributes=True)
-                for i in items_map.get(w.id, [])
-            ]
-            or None,
+        WatchlistOut.model_validate(
+            watchlist, from_attributes=True
+        ).model_copy(
+            update={"items": [WatchlistItemBase.model_validate(item, from_attributes=True) for item in items_by_watchlist_id.get(watchlist.id, [])]}
         )
-        for w in watchlists
+        for watchlist in watchlists
     ]
 
-    return WatchlistsDetail(watchlists=results)
+    return WatchlistsDetail(total=len(results), watchlists=results)
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)

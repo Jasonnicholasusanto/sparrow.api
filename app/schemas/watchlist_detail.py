@@ -1,17 +1,13 @@
 from typing import List, Optional
 from pydantic import BaseModel
 
-from app.schemas.watchlist import WatchlistPublicOut, WatchlistCreate
-from app.schemas.watchlist_item import WatchlistItemBase, WatchlistItemCreateWithoutId
-
-
-class WatchlistDetail(BaseModel):
-    watchlist: WatchlistPublicOut
-    watchlist_items: List[WatchlistItemBase] | None
+from app.schemas.watchlist import WatchlistOut, WatchlistCreate
+from app.schemas.watchlist_item import WatchlistItemCreateWithoutId
 
 
 class WatchlistsDetail(BaseModel):
-    watchlists: List[WatchlistDetail]
+    total: int
+    watchlists: List[WatchlistOut]
 
 
 class WatchlistDetailCreateRequest(BaseModel):

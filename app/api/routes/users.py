@@ -1,5 +1,6 @@
 from uuid import UUID
-from app.services.watchlist_service import get_user_public_watchlists
+from app.schemas.watchlist import UserWatchlistsGroupedResultsOut, UserWatchlistsResponseOut
+from app.services.watchlist_service import enrich_user_watchlists_with_market_snapshots, get_all_user_related_watchlists, get_user_public_watchlists
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies.profile import get_current_profile
@@ -40,6 +41,7 @@ def get_public_user_profile_by_username(
     Public profile lookup by username (case-insensitive).
     Returns 404 if not found or if the profile is deactivated.
     """
+    # 1. Validate username, then fetch profile by username
     if not username:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Username is required."
@@ -47,6 +49,7 @@ def get_public_user_profile_by_username(
 
     profile = get_user_profile_by_username(db, username=username)
 
+    # 2. If profile exists, gather additional public info
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found."
@@ -54,26 +57,30 @@ def get_public_user_profile_by_username(
 
     points = get_user_points(db, profile_id=profile.id)
 
-    # 3) Followers and Following counts
+    # 3. Followers and Following counts
     followers_count = get_followers_count(db, user_id=profile.id)
     following_count = get_following_count(db, user_id=profile.id)
 
-    # 4) Watchlists
-    public_watchlists = get_user_public_watchlists(db, user_profile_id=profile.id)
-    print("Public watchlists:", public_watchlists)
-    watchlists = {
-        "total": len(public_watchlists),
-        "watchlists": public_watchlists,
-    }
+    # 4. Watchlists
+    public_watchlists = get_all_user_related_watchlists(db, user_profile_id=profile.id, limit=20, offset=0, is_public_only=True)
+
+    # 5. Retrieve ticker information for all items in these watchlists
+    enriched_watchlists = enrich_user_watchlists_with_market_snapshots(public_watchlists)
+
+    watchlists_response = UserWatchlistsResponseOut(
+        limit=20,
+        offset=0,
+        results=UserWatchlistsGroupedResultsOut.model_validate(enriched_watchlists, from_attributes=True),
+    )
 
     return UserDetailsPublic(
         profile=UserProfilePublic.model_validate(profile, from_attributes=True),
         points=UserActivityPointsBreakdown.model_validate(points, from_attributes=True)
-        if points
-        else None,
+            if points
+            else None,
         followers_count=followers_count or 0,
         following_count=following_count or 0,
-        watchlists=watchlists,
+        watchlists=watchlists_response,
     )
 
 
