@@ -312,7 +312,7 @@ def create_watchlist(
         )
 
 
-@router.post("/add-item/{watchlist_id}", status_code=status.HTTP_200_OK)
+@router.post("/{watchlist_id}/add-item", status_code=status.HTTP_200_OK)
 def add_watchlist_item_to_watchlist(
     watchlist_id: int,
     item: WatchlistItemBase,
@@ -329,7 +329,7 @@ def add_watchlist_item_to_watchlist(
     return {"message": "Item added successfully", "item": new_item}
 
 
-@router.post("/add-items/{watchlist_id}", status_code=status.HTTP_200_OK)
+@router.post("/{watchlist_id}/add-items", status_code=status.HTTP_200_OK)
 def add_bulk_watchlist_items_to_watchlist(
     watchlist_id: int,
     items: List[WatchlistItemBase],
