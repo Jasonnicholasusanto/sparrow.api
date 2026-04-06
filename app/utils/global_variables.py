@@ -7,6 +7,8 @@ MAX_PROFILE_PICTURE_FILE_SIZE_KB = 300
 
 MAX_BANNER_IMAGE_FILE_SIZE_KB = 800
 
+WATCHLIST_GROUP_KEYS = ["created", "forked", "shared", "bookmarked"]
+
 RESERVED = {
     "@",
     "me",

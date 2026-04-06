@@ -29,6 +29,7 @@ from app.schemas.watchlist_share import (
     WatchlistShareOut,
     WatchlistShareUpdate,
 )
+from app.services.user_profile_service import get_user_profile_by_username
 from app.services.watchlist_service import (
     add_item_to_watchlist,
     add_many_items_to_watchlist,
@@ -36,10 +37,12 @@ from app.services.watchlist_service import (
     create_watchlist_for_user,
     delete_watchlist,
     delete_watchlist_item,
+    enrich_user_watchlists_with_market_snapshots,
     fork_watchlist,
     fork_watchlist_custom,
     get_all_user_related_watchlists,
     get_user_bookmarked_watchlists,
+    get_user_public_watchlists,
     get_watchlist_items_securely,
     get_watchlist_lineage,
     get_watchlists_shared_with_user,
@@ -99,12 +102,51 @@ def get_my_watchlists(
         offset=offset,
     )
 
-    # 2. Return results
+    if not user_watchlists:
+        return {
+            "limit": limit,
+            "offset": offset,
+            "results": [],
+        }
+
+    # 2. Retrieve ticker information for all items in these watchlists
+    enriched_watchlists = enrich_user_watchlists_with_market_snapshots(user_watchlists)
+
+    # 3. Return enriched watchlists with pagination metadata
     return {
         "limit": limit,
         "offset": offset,
-        "results": user_watchlists,
+        "results": enriched_watchlists,
     }
+
+
+@router.get("/user/@{username}")
+def get_public_watchlists_by_username(
+    username: str,
+    db: SessionDep,
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    user=Depends(get_current_profile),
+):
+    """
+    Get PUBLIC watchlists for a given username (case-insensitive).
+    Returns multiple results.
+    """
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Username is required."
+        )
+
+    profile = get_user_profile_by_username(db, username=username)
+
+    # 1. Search for public watchlists by username
+    watchlists = get_user_public_watchlists(
+        db, user_profile_id=profile.id, limit=limit, offset=offset
+    )
+    if not watchlists:
+        return WatchlistsDetail(watchlists=[])
+
+    return watchlists
 
 
 @router.get("/{watchlist_id}/items", response_model=list[WatchlistItemOut])

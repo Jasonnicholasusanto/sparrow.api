@@ -18,6 +18,7 @@ from app.schemas.stocks import (
     TickerSparklineResponse,
     TickersRequest,
 )
+from app.utils.functions import safe_json_float
 from app.utils.global_variables import STOCK_INTERVALS, STOCK_PERIODS
 from app.utils.stocks import get_regular_market_change
 
@@ -556,9 +557,9 @@ async def search_quotes(
             except Exception:
                 fi = {}
 
-            last_price = fi.get("lastPrice")
-            previous_close = fi.get("regularMarketPreviousClose") or fi.get(
-                "previousClose"
+            last_price = safe_json_float(fi.get("lastPrice"))
+            previous_close = safe_json_float(
+                fi.get("regularMarketPreviousClose") or fi.get("previousClose")
             )
 
             regular_market_change = None
@@ -569,15 +570,16 @@ async def search_quotes(
                 and previous_close is not None
                 and previous_close != 0
             ):
-                regular_market_change = last_price - previous_close
-                regular_market_change_percent = (
-                    regular_market_change / previous_close
-                ) * 100
+                change = last_price - previous_close
+                pct = (change / previous_close) * 100
+
+                regular_market_change = safe_json_float(change)
+                regular_market_change_percent = safe_json_float(pct)
 
             merged_results.append(
                 SearchQuoteEnrichedResponse(
                     symbol=result.symbol,
-                    score=result.score,
+                    score=safe_json_float(result.score),
                     shortname=result.shortname,
                     longname=result.longname,
                     index=result.index,
@@ -587,19 +589,23 @@ async def search_quotes(
                     sectorDisp=result.sectorDisp,
                     industryDisp=result.industryDisp,
                     currency=fi.get("currency"),
-                    lastPrice=last_price,
-                    open=fi.get("open"),
-                    dayHigh=fi.get("dayHigh"),
-                    dayLow=fi.get("dayLow"),
-                    previousClose=fi.get("previousClose"),
-                    regularMarketPreviousClose=fi.get("regularMarketPreviousClose"),
-                    lastVolume=fi.get("lastVolume"),
-                    yearChange=fi.get("yearChange"),
-                    yearHigh=fi.get("yearHigh"),
-                    yearLow=fi.get("yearLow"),
+                    lastPrice=safe_json_float(last_price),
+                    open=safe_json_float(fi.get("open")),
+                    dayHigh=safe_json_float(fi.get("dayHigh")),
+                    dayLow=safe_json_float(fi.get("dayLow")),
+                    previousClose=safe_json_float(previous_close),
+                    regularMarketPreviousClose=safe_json_float(
+                        fi.get("regularMarketPreviousClose")
+                    ),
+                    lastVolume=safe_json_float(fi.get("lastVolume")),
+                    yearChange=safe_json_float(fi.get("yearChange")),
+                    yearHigh=safe_json_float(fi.get("yearHigh")),
+                    yearLow=safe_json_float(fi.get("yearLow")),
                     timezone=fi.get("timezone"),
-                    regularMarketChange=regular_market_change,
-                    regularMarketChangePercent=regular_market_change_percent,
+                    regularMarketChange=safe_json_float(regular_market_change),
+                    regularMarketChangePercent=safe_json_float(
+                        regular_market_change_percent
+                    ),
                 )
             )
 
