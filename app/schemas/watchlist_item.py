@@ -39,6 +39,7 @@ class WatchlistItemTickerDetails(BaseModel):
     last_price: Optional[float] = None
     currency: Optional[str] = None
     previous_close: Optional[float] = None
+    volume: Optional[int] = None
     regular_market_change: Optional[float] = None
     regular_market_change_percent: Optional[float] = None
 
