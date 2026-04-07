@@ -31,7 +31,6 @@ from app.schemas.watchlist_item import (
     WatchlistItemCreateWithoutId,
     WatchlistItemOut,
     WatchlistItemTickerDetails,
-    WatchlistItemUpdate,
 )
 from app.schemas.watchlist_share import WatchlistShareCreate
 import yfinance as yf

@@ -3,19 +3,18 @@ from __future__ import annotations
 from typing import Any
 
 import yfinance as yf
-
-from app.schemas.stocks import SearchQuoteEnrichedResponse, TickerMarketSnapshotResponse
 from app.schemas.watchlist_item import WatchlistItemTickerDetails
 from app.utils.functions import safe_json_float
 
 
-def build_ticker_market_snapshot(symbol: str, fi: dict[str, Any] | None) -> WatchlistItemTickerDetails:
+def build_ticker_market_snapshot(fi: dict[str, Any] | None) -> WatchlistItemTickerDetails:
     fi = fi or {}
 
     last_price = safe_json_float(fi.get("lastPrice"))
     previous_close = safe_json_float(
         fi.get("regularMarketPreviousClose") or fi.get("previousClose")
     )
+    volume = safe_json_float(fi.get("lastVolume"))
 
     regular_market_change = None
     regular_market_change_percent = None
@@ -35,6 +34,7 @@ def build_ticker_market_snapshot(symbol: str, fi: dict[str, Any] | None) -> Watc
         last_price=safe_json_float(last_price),
         currency=fi.get("currency"),
         previous_close=safe_json_float(previous_close),
+        volume=safe_json_float(volume),
         regular_market_change=safe_json_float(regular_market_change),
         regular_market_change_percent=safe_json_float(regular_market_change_percent),
     )
@@ -58,7 +58,7 @@ def fetch_ticker_market_snapshots(symbols: list[str]) -> dict[str, WatchlistItem
         try:
             raw_fi = tickers_data.tickers[symbol].fast_info
             fi = dict(raw_fi) if raw_fi else {}
-            results[symbol] = build_ticker_market_snapshot(symbol, fi)
+            results[symbol] = build_ticker_market_snapshot(fi)
         except Exception:
             results[symbol] = None
 
