@@ -831,7 +831,7 @@ def update_user_watchlist(
                 for item in update_data.items
             }
 
-            # 2a. Delete removed items
+            # 2a. Delete removed items (items not included in payload)
             for key, db_item in existing_map.items():
                 if key not in incoming_map:
                     session.delete(db_item)
@@ -856,6 +856,8 @@ def update_user_watchlist(
                         purchase_price=incoming_item.purchase_price,
                     )
                     session.add(new_item)
+
+            updated_watchlist.updated_at = datetime.now(timezone.utc)
 
         session.commit()
         session.refresh(updated_watchlist)

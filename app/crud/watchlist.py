@@ -263,8 +263,20 @@ class CRUDWatchlist(CRUDBase[Watchlist, WatchlistCreate, WatchlistUpdate]):
                 .values(is_default=False)
             )
 
+        update_data = obj_in.model_dump(exclude_unset=True)
+
+        for field, value in update_data.items():
+            setattr(db_obj, field, value)
+
+        db_obj.updated_at = datetime.now(timezone.utc)
+
+        session.add(db_obj)
+        session.commit()
+        session.refresh(db_obj)
+        return db_obj
+
         # Delegate to CRUDBase for patch semantics and commit
-        return super().update(session, id=id, obj_in=obj_in)
+        # return super().update(session, id=id, obj_in=obj_in)
 
     def remove(
         self,
