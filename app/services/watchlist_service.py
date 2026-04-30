@@ -844,7 +844,7 @@ def update_user_watchlist(
                     existing_item.note = incoming_item.note
                     existing_item.position = incoming_item.position
                     existing_item.quantity = incoming_item.quantity
-                    existing_item.purchase_price = incoming_item.purchase_price
+                    existing_item.reference_price = incoming_item.reference_price
                 else:
                     new_item = WatchlistItem(
                         watchlist_id=watchlist_id,
@@ -853,7 +853,7 @@ def update_user_watchlist(
                         note=incoming_item.note,
                         position=incoming_item.position,
                         quantity=incoming_item.quantity,
-                        purchase_price=incoming_item.purchase_price,
+                        reference_price=incoming_item.reference_price,
                     )
                     session.add(new_item)
 

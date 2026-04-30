@@ -34,7 +34,7 @@ class WatchlistItem(SQLModel, table=True):
     note: Optional[str] = None
     position: Optional[int] = None
     quantity: Optional[float] = None
-    purchase_price: Optional[float] = None
+    reference_price: Optional[float] = None
 
     created_at: datetime = Field(
         sa_column=Column(
