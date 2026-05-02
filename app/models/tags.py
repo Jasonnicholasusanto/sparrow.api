@@ -10,7 +10,7 @@ class Tags(SQLModel, table=True):
 
     id: int = Field(default=None, nullable=False, primary_key=True)
     name: str = Field(index=True)
-    slug: Optional[str] = None
+    slug: str = Field(sa_column=Column(postgresql.VARCHAR, unique=True, nullable=False))
     category: Optional[str] = None
     is_system: bool = Field(default=False)
     created_at: datetime = Field(
