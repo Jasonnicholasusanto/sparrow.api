@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies.profile import get_current_profile
 from app.api.deps import SessionDep
+from app.schemas.tags import TagOut
 from app.schemas.watchlist import (
     StockAllocationType,
     UserWatchlistsGroupedResultsOut,
@@ -29,12 +30,14 @@ from app.schemas.watchlist_share import (
     WatchlistShareOut,
     WatchlistShareUpdate,
 )
+from app.services.tags import attach_tags_to_watchlist, get_or_create_tags, sync_watchlist_tags
 from app.services.user_profile_service import get_user_profile_by_username
 from app.services.watchlist_service import (
     add_item_to_watchlist,
     add_many_items_to_watchlist,
     bookmark_watchlist,
     create_watchlist_for_user,
+    create_watchlist_with_details_for_user,
     delete_watchlist,
     delete_watchlist_item,
     enrich_user_watchlists_with_market_snapshots,
@@ -267,38 +270,32 @@ def create_watchlist(
     payload: WatchlistDetailCreateRequest,
     user=Depends(get_current_profile),
 ):
-    """
-    Create a new watchlist for the authenticated user.
-    Optionally accepts a list of initial watchlist items.
-    """
     try:
-        watchlist_data = payload.watchlist_data
-        items = payload.items
-
-        # 1. Validate allocation type consistency
-        validate_watchlist_allocation(watchlist_data, items)
-
-        # 2. Create the new watchlist
-        new_watchlist = create_watchlist_for_user(
+        new_watchlist, new_items, resolved_tags = create_watchlist_with_details_for_user(
             db,
             user_id=user.id,
-            watchlist_data=watchlist_data,
+            payload=payload,
         )
 
-        # 3. Add items if provided
-        new_items = []
-        if items:
-            new_items = add_many_items_to_watchlist(
-                session=db,
-                watchlist_id=new_watchlist.id,
-                items=items,
-            )
+        watchlist_out = WatchlistOut.model_validate(
+            new_watchlist,
+            from_attributes=True,
+        ).model_copy(
+            update={
+                "items": [
+                    WatchlistItemBase.model_validate(item, from_attributes=True)
+                    for item in new_items
+                ],
+                "tags": [
+                    TagOut.model_validate(tag, from_attributes=True)
+                    for tag in resolved_tags
+                ],
+            }
+        )
 
-        # 4. Return combined response
         return {
             "message": "Watchlist created successfully.",
-            "watchlist": new_watchlist,
-            "watchlist_items": new_items,
+            "watchlist": watchlist_out,
         }
     except ValueError as e:
         raise HTTPException(
@@ -514,7 +511,7 @@ def update_watchlist(
     Update an existing watchlist.
     Only the owner can perform this action.
     """
-    # Perform update
+    # 1. Update watchlist metadata/items
     updated_watchlist = update_user_watchlist(
         session=db,
         watchlist_id=watchlist_id,
@@ -528,6 +525,7 @@ def update_watchlist(
             detail="Watchlist not found or you do not have permission to edit it.",
         )
     
+    # 2. Load items and enrich with market data for the response
     items_by_watchlist_id = load_items_for_watchlists(db, [updated_watchlist.id])
 
     item_loaded_watchlists = [

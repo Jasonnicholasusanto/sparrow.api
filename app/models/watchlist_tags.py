@@ -7,9 +7,9 @@ class WatchlistTags(SQLModel, table=True):
     __tablename__ = "watchlist_tags"
     __table_args__ = {"schema": "public"}
 
-    id: int = SQLModel.Field(default=None, primary_key=True)
-    watchlist_id: int = SQLModel.Field(foreign_key="public.watchlists.id", index=True)
-    tag_id: int = SQLModel.Field(foreign_key="public.tags.id", index=True)
+    id: int = Field(default=None, nullable=False, primary_key=True)
+    watchlist_id: int = Field(foreign_key="public.watchlist.id", index=True)
+    tag_id: int = Field(foreign_key="public.tags.id", index=True)
     created_at: datetime = Field(
         sa_column=Column(
             postgresql.TIMESTAMP(timezone=True),
