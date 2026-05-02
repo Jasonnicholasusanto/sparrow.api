@@ -24,3 +24,10 @@ class TagOut(TagBase):
 
     id: int
     created_at: datetime
+
+class TagSearchOut(TagBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    public_watchlist_count: int = 0

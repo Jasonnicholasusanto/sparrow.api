@@ -19,18 +19,7 @@ logger = logging.getLogger("uvicorn")
 def register_models():
     # Importing these attaches tables to SQLModel.metadata (side effects)
     if not SQLModel.metadata.tables:
-        from app.models import (
-            auth as _auth,
-            user_profile as _user_profile,
-            user_activity as _user_activity,
-            user_follow as _user_follow,
-            navbar_routes as _navbar_routes,
-            point_rule as _point_rule,
-            watchlist as _watchlist,
-            watchlist_bookmark as _watchlist_bookmark,
-            watchlist_item as _watchlist_item,
-            watchlist_share as _watchlist_share,
-        )
+        import app.models  # noqa: F401
 
         logger.info("Models registered to SQLModel metadata.")
     else:
