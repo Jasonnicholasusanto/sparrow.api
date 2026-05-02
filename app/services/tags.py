@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 from app.crud.tags import tags as tag_crud
 from app.models.tags import Tags
 from app.models.watchlist_tags import WatchlistTags
+from app.schemas.tags import TagSearchOut
 
 
 def slugify_tag(name: str) -> str:
@@ -263,3 +264,29 @@ def get_tags_for_watchlists(
         result.setdefault(watchlist_id, []).append(tag)
 
     return result
+
+
+def search_tags(
+    session,
+    *,
+    query: str,
+    limit: int = 8,
+) -> list[TagSearchOut]:
+    rows = tag_crud.search_with_public_counts(
+        session,
+        query=query,
+        limit=limit,
+    )
+
+    return [
+        TagSearchOut(
+            id=tag.id,
+            name=tag.name,
+            slug=tag.slug,
+            category=tag.category,
+            is_system=tag.is_system,
+            created_at=tag.created_at,
+            public_watchlist_count=public_watchlist_count,
+        )
+        for tag, public_watchlist_count in rows
+    ]

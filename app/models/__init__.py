@@ -17,6 +17,8 @@ from .watchlist_item import WatchlistItem
 from .watchlist_share import WatchlistShare
 from .vote import Vote
 from .search_history import SearchHistory
+from .tags import Tags
+from .watchlist_tags import WatchlistTags
 
 __all__ = [
     "User",
@@ -31,4 +33,6 @@ __all__ = [
     "WatchlistShare",
     "Vote",
     "SearchHistory",
+    "Tags",
+    "WatchlistTags",
 ]
