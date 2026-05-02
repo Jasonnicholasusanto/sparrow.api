@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.tags import TagOut
 from app.schemas.watchlist_item import WatchlistItemOut
 
 
@@ -56,6 +57,7 @@ class WatchlistOut(WatchlistInputBase, WatchlistForkMeta):
     created_at: datetime
     updated_at: datetime
     items: Optional[List[WatchlistItemOut]] = None
+    tags: Optional[List[TagOut]] = None
 
 
 class WatchlistPublicOut(WatchlistInputBase, WatchlistForkMeta):

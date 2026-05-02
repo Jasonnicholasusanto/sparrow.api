@@ -12,9 +12,11 @@ class WatchlistsDetail(BaseModel):
 
 class WatchlistDetailCreateRequest(BaseModel):
     watchlist_data: WatchlistCreate
+    tags: Optional[List[str]] = None
     items: Optional[List[WatchlistItemCreateWithoutId]] = None
 
 
 class WatchlistDetailUpdateRequest(BaseModel):
     watchlist_data: Optional[WatchlistUpdate] = None
+    tags: Optional[List[str]] = None
     items: Optional[List[WatchlistItemBase]] = None

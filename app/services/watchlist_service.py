@@ -9,11 +9,13 @@ from app.crud.watchlist_item import watchlist_item as watchlist_item_crud
 from app.crud.watchlist import watchlist as watchlist_crud
 from app.crud.watchlist_share import watchlist_share as watchlist_share_crud
 from app.crud.watchlist_bookmark import watchlist_bookmark as watchlist_bookmark_crud
+from app.models.tags import Tags
 from app.models.watchlist import Watchlist
 from app.models.watchlist_bookmark import WatchlistBookmark
 from app.models.watchlist_item import WatchlistItem
 from app.models.watchlist_share import WatchlistShare
 from app.schemas.stocks import TickerFastInfoResponse, TickersRequest
+from app.schemas.tags import TagOut
 from app.schemas.watchlist import (
     StockAllocationType,
     UserWatchlistsGroupedResultsOut,
@@ -24,7 +26,7 @@ from app.schemas.watchlist import (
     WatchlistVisibility,
 )
 from app.schemas.watchlist_bookmark import WatchlistBookmarkBase
-from app.schemas.watchlist_detail import WatchlistDetailUpdateRequest
+from app.schemas.watchlist_detail import WatchlistDetailCreateRequest, WatchlistDetailUpdateRequest
 from app.schemas.watchlist_item import (
     WatchlistItemBase,
     WatchlistItemCreate,
@@ -35,19 +37,35 @@ from app.schemas.watchlist_item import (
 from app.schemas.watchlist_share import WatchlistShareCreate
 import yfinance as yf
 
+from app.services.tags import add_tags_to_watchlist, get_tags_for_watchlists, sync_watchlist_tags
 from app.services.yfinance_service import fetch_ticker_market_snapshots
 from app.utils.global_variables import WATCHLIST_GROUP_KEYS
 
 
-def build_watchlist_out(w: Watchlist, items_by_watchlist_id: dict[int, list[WatchlistItem]]) -> WatchlistOut:
-        watchlist_out = WatchlistOut.model_validate(w, from_attributes=True)
+def build_watchlist_out(
+    w: Watchlist,
+    items_by_watchlist_id: dict[int, list[WatchlistItem]],
+    tags_by_watchlist_id: dict[int, list[Tags]],
+) -> WatchlistOut:
+    watchlist_out = WatchlistOut.model_validate(w, from_attributes=True)
 
-        items = [
-            WatchlistItemOut.model_validate(item, from_attributes=True)
-            for item in items_by_watchlist_id.get(w.id, [])
-        ]
+    items = [
+        WatchlistItemOut.model_validate(item, from_attributes=True)
+        for item in items_by_watchlist_id.get(w.id, [])
+    ]
 
-        return watchlist_out.model_copy(update={"items": items})
+    tags = [
+        TagOut.model_validate(tag, from_attributes=True)
+        for tag in tags_by_watchlist_id.get(w.id, [])
+    ]
+
+    return watchlist_out.model_copy(
+        update={
+            "items": items,
+            "tags": tags,
+        }
+    )
+
 
 def enrich_watchlists(watchlists: list[WatchlistOut], snapshot_map: dict[str, WatchlistItemTickerDetails | None]) -> list[WatchlistOut]:
     enriched_watchlists: list[WatchlistOut] = []
@@ -70,6 +88,7 @@ def enrich_watchlists(watchlists: list[WatchlistOut], snapshot_map: dict[str, Wa
 
     return enriched_watchlists
 
+
 def search_public_watchlists_by_name(
     session: Session, *, name: str, limit: int = 20, offset: int = 0
 ):
@@ -77,6 +96,7 @@ def search_public_watchlists_by_name(
         session, name=name, limit=limit, offset=offset
     )
     return watchlists
+
 
 def get_user_public_watchlists(
     session,
@@ -113,6 +133,7 @@ def get_user_public_watchlists(
         )
         for watchlist in watchlists
     ]
+
 
 def get_all_user_related_watchlists(
     session,
@@ -231,10 +252,16 @@ def get_all_user_related_watchlists(
         for item in items:
             items_by_watchlist_id[item.watchlist_id].append(item)
     
-    created_results = [build_watchlist_out(w, items_by_watchlist_id) for w in owned_watchlists]
-    forked_results = [build_watchlist_out(w, items_by_watchlist_id) for w in forked_watchlists]
-    shared_results = [build_watchlist_out(w, items_by_watchlist_id) for w in shared_watchlists]
-    bookmarked_results = [build_watchlist_out(w, items_by_watchlist_id) for w in bookmarked_watchlists]
+    # Fetch tags for all watchlists in one query
+    tags_by_watchlist_id = get_tags_for_watchlists(
+        session,
+        watchlist_ids=watchlist_ids,
+    )
+    
+    created_results = [build_watchlist_out(w, items_by_watchlist_id, tags_by_watchlist_id) for w in owned_watchlists]
+    forked_results = [build_watchlist_out(w, items_by_watchlist_id, tags_by_watchlist_id) for w in forked_watchlists]
+    shared_results = [build_watchlist_out(w, items_by_watchlist_id, tags_by_watchlist_id) for w in shared_watchlists]
+    bookmarked_results = [build_watchlist_out(w, items_by_watchlist_id, tags_by_watchlist_id) for w in bookmarked_watchlists]
 
     return UserWatchlistsGroupedResultsOut(
         created=created_results,
@@ -252,6 +279,7 @@ def get_all_user_related_watchlists(
             "bookmarked": len(bookmarked_results),
         },
     )
+
 
 def enrich_user_watchlists_with_market_snapshots(
     user_watchlists: UserWatchlistsGroupedResultsOut,
@@ -274,6 +302,7 @@ def enrich_user_watchlists_with_market_snapshots(
         total_count=user_watchlists.total_count,
         counts=user_watchlists.counts,
     )
+
 
 def enrich_user_watchlists_with_fast_info(user_watchlists: dict) -> dict:
     symbols: list[str] = []
@@ -314,6 +343,7 @@ def enrich_user_watchlists_with_fast_info(user_watchlists: dict) -> dict:
 
     return enriched
 
+
 def fetch_tickers_fast_info(symbols: TickersRequest) -> dict[str, Any]:
     if not symbols:
         return {}
@@ -353,6 +383,7 @@ def fetch_tickers_fast_info(symbols: TickersRequest) -> dict[str, Any]:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch ticker fast info: {str(e)}",
         )
+
 
 def get_watchlists_shared_with_user(
     session,
@@ -508,13 +539,61 @@ def create_watchlist_for_user(
     *,
     user_id: uuid.UUID,
     watchlist_data: WatchlistCreate,
-) -> WatchlistOut:
+) -> Watchlist:
     """
     Create a new watchlist for the given user.
+    Returns the ORM model, not the response schema.
     """
-    db_obj = watchlist_crud.create(session, owner_id=user_id, obj_in=watchlist_data)
-    return WatchlistOut.model_validate(db_obj, from_attributes=True)
+    return watchlist_crud.create(session, owner_id=user_id, obj_in=watchlist_data)
 
+
+def create_watchlist_with_details_for_user(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    payload: WatchlistDetailCreateRequest,
+):
+    """
+    Create a watchlist with optional items and tags in one transaction.
+    """
+    try:
+        watchlist_data = payload.watchlist_data
+        items = payload.items
+        tag_names = payload.tags
+
+        validate_watchlist_allocation(watchlist_data, items)
+
+        new_watchlist = create_watchlist_for_user(
+            session,
+            user_id=user_id,
+            watchlist_data=watchlist_data,
+        )
+
+        new_items = []
+        if items:
+            new_items = add_many_items_to_watchlist(
+                session=session,
+                watchlist_id=new_watchlist.id,
+                items=items,
+            )
+
+        resolved_tags = []
+        if tag_names:
+            resolved_tags = add_tags_to_watchlist(
+                session,
+                watchlist_id=new_watchlist.id,
+                tag_names=tag_names,
+            )
+
+        session.commit()
+        session.refresh(new_watchlist)
+
+        return new_watchlist, new_items, resolved_tags
+
+    except Exception:
+        session.rollback()
+        raise
+    
 
 def add_item_to_watchlist(
     session: Session,
@@ -799,6 +878,9 @@ def update_user_watchlist(
         )
 
     try:
+        updated_watchlist = watchlist
+        has_changes = False
+
         # 1. Update watchlist metadata if provided
         if update_data.watchlist_data is not None:
             updated_watchlist = watchlist_crud.update(
@@ -811,8 +893,7 @@ def update_user_watchlist(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Failed to update — watchlist not found.",
                 )
-        else:
-            updated_watchlist = watchlist
+            has_changes = True
 
         # 2. Sync watchlist items if provided
         if update_data.items is not None:
@@ -835,16 +916,33 @@ def update_user_watchlist(
             for key, db_item in existing_map.items():
                 if key not in incoming_map:
                     session.delete(db_item)
+                    has_changes = True
 
             # 2b. Update existing items / create new items
             for key, incoming_item in incoming_map.items():
                 existing_item = existing_map.get(key)
 
                 if existing_item:
-                    existing_item.note = incoming_item.note
-                    existing_item.position = incoming_item.position
-                    existing_item.quantity = incoming_item.quantity
-                    existing_item.purchase_price = incoming_item.purchase_price
+                    item_changed = False
+
+                    if existing_item.note != incoming_item.note:
+                        existing_item.note = incoming_item.note
+                        item_changed = True
+
+                    if existing_item.position != incoming_item.position:
+                        existing_item.position = incoming_item.position
+                        item_changed = True
+
+                    if existing_item.quantity != incoming_item.quantity:
+                        existing_item.quantity = incoming_item.quantity
+                        item_changed = True
+
+                    if existing_item.reference_price != incoming_item.reference_price:
+                        existing_item.reference_price = incoming_item.reference_price
+                        item_changed = True
+
+                    if item_changed:
+                        has_changes = True
                 else:
                     new_item = WatchlistItem(
                         watchlist_id=watchlist_id,
@@ -853,12 +951,25 @@ def update_user_watchlist(
                         note=incoming_item.note,
                         position=incoming_item.position,
                         quantity=incoming_item.quantity,
-                        purchase_price=incoming_item.purchase_price,
+                        reference_price=incoming_item.reference_price,
                     )
                     session.add(new_item)
+                    has_changes = True
 
-            updated_watchlist.updated_at = datetime.now(timezone.utc)
+            # 3. Sync watchlist tags if provided
+            if update_data.tags is not None:
+                sync_watchlist_tags(
+                    session,
+                    watchlist_id=watchlist_id,
+                    tag_names=update_data.tags,
+                )
+                has_changes = True
 
+            # 4. Touch updated_at only if anything changed in this workflow
+            if has_changes:
+                updated_watchlist.updated_at = datetime.now(timezone.utc)
+
+        session.add(updated_watchlist)
         session.commit()
         session.refresh(updated_watchlist)
 
