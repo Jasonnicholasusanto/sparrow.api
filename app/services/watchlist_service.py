@@ -14,7 +14,7 @@ from app.models.watchlist import Watchlist
 from app.models.watchlist_bookmark import WatchlistBookmark
 from app.models.watchlist_item import WatchlistItem
 from app.models.watchlist_share import WatchlistShare
-from app.schemas.stocks import TickerFastInfoResponse, TickersRequest
+from app.schemas.stocks import TickerFastInfoResponse, TickerMarketSnapshotResponse, TickersRequest
 from app.schemas.tags import TagOut
 from app.schemas.watchlist import (
     StockAllocationType,
@@ -32,7 +32,6 @@ from app.schemas.watchlist_item import (
     WatchlistItemCreate,
     WatchlistItemCreateWithoutId,
     WatchlistItemOut,
-    WatchlistItemTickerDetails,
 )
 from app.schemas.watchlist_share import WatchlistShareCreate
 import yfinance as yf
@@ -67,7 +66,7 @@ def build_watchlist_out(
     )
 
 
-def enrich_watchlists(watchlists: list[WatchlistOut], snapshot_map: dict[str, WatchlistItemTickerDetails | None]) -> list[WatchlistOut]:
+def enrich_watchlists(watchlists: list[WatchlistOut], snapshot_map: dict[str, TickerMarketSnapshotResponse | None]) -> list[WatchlistOut]:
     enriched_watchlists: list[WatchlistOut] = []
 
     for watchlist in watchlists:

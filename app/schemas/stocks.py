@@ -557,9 +557,9 @@ class MultiTickerSparklineResponse(BaseModel):
 
 
 class TickerMarketSnapshotResponse(BaseModel):
-    symbol: str
-    lastPrice: float | None = None
-    currency: str | None = None
-    previousClose: float | None = None
-    regularMarketChange: float | None = None
-    regularMarketChangePercent: float | None = None
+    last_price: Optional[float] = None
+    currency: Optional[str] = None
+    previous_close: Optional[float] = None
+    volume: Optional[int] = None
+    regular_market_change: Optional[float] = None
+    regular_market_change_percent: Optional[float] = None
