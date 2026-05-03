@@ -6,6 +6,8 @@ from typing import Optional
 from pydantic import ConfigDict, Field
 from pydantic import BaseModel
 
+from app.schemas.stocks import TickerMarketSnapshotResponse
+
 
 class WatchlistItemBase(BaseModel):
     symbol: str = Field(min_length=1)
@@ -51,4 +53,4 @@ class WatchlistItemOut(WatchlistItemBase):
     watchlist_id: int
     created_at: datetime
     updated_at: datetime
-    ticker_details: Optional[WatchlistItemTickerDetails] = None
+    ticker_details: Optional[TickerMarketSnapshotResponse] = None

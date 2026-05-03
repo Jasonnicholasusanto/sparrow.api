@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 import yfinance as yf
-from app.schemas.watchlist_item import WatchlistItemTickerDetails
+from app.schemas.watchlist_item import TickerMarketSnapshotResponse
 from app.utils.functions import safe_json_float
 
 
-def build_ticker_market_snapshot(fi: dict[str, Any] | None) -> WatchlistItemTickerDetails:
+def build_ticker_market_snapshot(fi: dict[str, Any] | None) -> TickerMarketSnapshotResponse:
     fi = fi or {}
 
     last_price = safe_json_float(fi.get("lastPrice"))
@@ -30,7 +30,7 @@ def build_ticker_market_snapshot(fi: dict[str, Any] | None) -> WatchlistItemTick
         regular_market_change = safe_json_float(change)
         regular_market_change_percent = safe_json_float(pct)
 
-    return WatchlistItemTickerDetails(
+    return TickerMarketSnapshotResponse(
         last_price=safe_json_float(last_price),
         currency=fi.get("currency"),
         previous_close=safe_json_float(previous_close),
@@ -39,7 +39,7 @@ def build_ticker_market_snapshot(fi: dict[str, Any] | None) -> WatchlistItemTick
         regular_market_change_percent=safe_json_float(regular_market_change_percent),
     )
 
-def fetch_ticker_market_snapshots(symbols: list[str]) -> dict[str, WatchlistItemTickerDetails | None]:
+def fetch_ticker_market_snapshots(symbols: list[str]) -> dict[str, TickerMarketSnapshotResponse | None]:
     normalized_symbols = list(
         {
             symbol.strip().upper()
@@ -52,7 +52,7 @@ def fetch_ticker_market_snapshots(symbols: list[str]) -> dict[str, WatchlistItem
         return {}
 
     tickers_data = yf.Tickers(" ".join(normalized_symbols))
-    results: dict[str, WatchlistItemTickerDetails | None] = {}
+    results: dict[str, TickerMarketSnapshotResponse | None] = {}
 
     for symbol in normalized_symbols:
         try:

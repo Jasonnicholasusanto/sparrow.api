@@ -4,7 +4,7 @@ from fastapi import Depends
 from app.api.dependencies.profile import get_current_profile
 from app.api.deps import SessionDep
 from app.models.favourite_stock import FavouriteStock
-from app.schemas.favourite_stock import FavouriteStockCreate, FavouriteStockUpdate
+from app.schemas.favourite_stock import FavouriteStockCreate, FavouriteStockOut, FavouriteStockUpdate
 from app.services import favourite_stock_service
 from app.services.user_profile_service import get_user_profile_by_auth
 import yfinance as yf
@@ -19,17 +19,10 @@ def add_favourite(
     db: SessionDep,
     user=Depends(get_current_profile),
 ):
-    profile = get_user_profile_by_auth(db, auth_id=user.id)
-    if not profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User profile not found.",
-        )
-
     payload.symbol = payload.symbol.upper()
 
     existing = favourite_stock_service.get_favourite_stock_by_symbol(
-        db, user_id=profile.id, symbol=payload.symbol
+        db, user_id=user.id, symbol=payload.symbol
     )
     if existing:
         raise HTTPException(
@@ -42,13 +35,13 @@ def add_favourite(
         info = ticker.info
         payload.symbol = info.get("symbol", payload.symbol).upper()
         payload.exchange = info.get("exchange", "Unknown")
-        payload.company_name = info.get("longName", "Unknown")
+        payload.name = info.get("longName", "Unknown")
     except Exception as e:
         raise HTTPException(
             status_code=400, detail=f"Invalid symbol '{payload.symbol}': {str(e)}"
         )
 
-    return favourite_stock_service.add_favourite_stock(db, profile.id, payload)
+    return favourite_stock_service.add_favourite_stock(db, user.id, payload)
 
 
 @router.delete("/{id}", response_model=FavouriteStock)
@@ -57,12 +50,6 @@ def remove_favourite(
     db: SessionDep,
     user=Depends(get_current_profile),
 ):
-    profile = get_user_profile_by_auth(db, auth_id=user.id)
-    if not profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User profile not found.",
-        )
     return favourite_stock_service.remove_favourite_stock(db, id)
 
 
@@ -73,24 +60,21 @@ def update_favourite(
     db: SessionDep,
     user=Depends(get_current_profile),
 ):
-    profile = get_user_profile_by_auth(db, auth_id=user.id)
-    if not profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User profile not found.",
-        )
-    return favourite_stock_service.update_favourite_stock(db, profile.id, id, payload)
+    return favourite_stock_service.update_favourite_stock(db, user.id, id, payload)
 
 
-@router.get("/", response_model=list[FavouriteStock])
+@router.get("/", response_model=list[FavouriteStockOut])
 def list_favourites(
     db: SessionDep,
     user=Depends(get_current_profile),
 ):
-    profile = get_user_profile_by_auth(db, auth_id=user.id)
-    if not profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User profile not found.",
-        )
-    return favourite_stock_service.list_favourite_stocks(db, profile.id)
+    # 1. Get the list of favourite stocks for the user
+    favourite_stocks = favourite_stock_service.list_favourite_stocks(db, user.id)
+
+    if not favourite_stocks:
+        return []
+    
+    # 2. For each favourite stock, fetch the latest ticker details
+    enriched_favourites = favourite_stock_service.enrich_favourite_stock_with_ticker_details(favourite_stocks)
+
+    return enriched_favourites

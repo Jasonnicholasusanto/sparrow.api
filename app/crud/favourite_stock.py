@@ -11,6 +11,12 @@ class CRUDFavouriteStock(
     def get_by_id(self, db: Session, *, id: int) -> Optional[FavouriteStock]:
         statement = select(FavouriteStock).where(FavouriteStock.id == id)
         return db.exec(statement).first()
+    
+    def get_by_user_and_id(self, db: Session, *, user_id: str, id: int) -> Optional[FavouriteStock]:
+        statement = select(FavouriteStock).where(
+            FavouriteStock.user_id == user_id, FavouriteStock.id == id
+        )
+        return db.exec(statement).first()
 
     def get_by_symbol(
         self, db: Session, *, user_id: str, symbol: str
