@@ -44,7 +44,7 @@ def add_favourite(
     return favourite_stock_service.add_favourite_stock(db, user.id, payload)
 
 
-@router.delete("/{id}", response_model=FavouriteStock)
+@router.delete("/{id}", response_model=FavouriteStockOut)
 def remove_favourite(
     id: int,
     db: SessionDep,
@@ -53,7 +53,7 @@ def remove_favourite(
     return favourite_stock_service.remove_favourite_stock(db, user_id=user.id, id=id)
 
 
-@router.patch("/{id}", response_model=FavouriteStock)
+@router.patch("/{id}", response_model=FavouriteStockOut)
 def update_favourite(
     id: int,
     payload: FavouriteStockUpdate,

@@ -48,7 +48,7 @@ def remove_favourite_stock(
         raise HTTPException(status_code=404, detail="Favourite stock not found.")
 
     deleted_stock = crud_favourite_stock.remove(session, id=stock.id)
-    return deleted_stock
+    return FavouriteStockOut.model_validate(deleted_stock, from_attributes=True)
 
 
 def update_favourite_stock(
@@ -59,7 +59,7 @@ def update_favourite_stock(
         raise HTTPException(status_code=404, detail="Favourite stock not found.")
 
     updated = crud_favourite_stock.update(session=session, id=id, obj_in=data)
-    return updated
+    return FavouriteStockOut.model_validate(updated, from_attributes=True)
 
 
 def enrich_favourite_stock_with_ticker_details(favourite_stocks: list[FavouriteStockOut]) -> list[FavouriteStockOut]:
