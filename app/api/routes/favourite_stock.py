@@ -50,7 +50,7 @@ def remove_favourite(
     db: SessionDep,
     user=Depends(get_current_profile),
 ):
-    return favourite_stock_service.remove_favourite_stock(db, id)
+    return favourite_stock_service.remove_favourite_stock(db, user_id=user.id, id=id)
 
 
 @router.patch("/{id}", response_model=FavouriteStock)
