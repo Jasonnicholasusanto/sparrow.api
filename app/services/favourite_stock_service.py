@@ -20,7 +20,7 @@ def list_favourite_stocks(session: Session, user_id: uuid.UUID) -> list[Favourit
     ]
 
 
-def add_favourite_stock(session: Session, user_id: uuid.UUID, payload: FavouriteStockCreate):
+def add_favourite_stock(session: Session, user_id: uuid.UUID, payload: FavouriteStockCreate) -> FavouriteStockOut:
     existing = crud_favourite_stock.get_by_symbol(
         session, user_id=user_id, symbol=payload.symbol
     )
@@ -35,7 +35,9 @@ def add_favourite_stock(session: Session, user_id: uuid.UUID, payload: Favourite
         obj_in=payload,
         user_id=user_id,
     )
-    return new_item
+
+    new_item_out = FavouriteStockOut.model_validate(new_item, from_attributes=True)
+    return enrich_favourite_stock_with_ticker_details(new_item_out)
 
 
 def remove_favourite_stock(
@@ -51,6 +53,17 @@ def remove_favourite_stock(
     return FavouriteStockOut.model_validate(deleted_stock, from_attributes=True)
 
 
+def remove_all_favourite_stocks(
+    session: Session,
+    user_id: uuid.UUID,
+):
+    deleted_stocks = crud_favourite_stock.remove_all_by_user(session, user_id=user_id)
+    return [
+        FavouriteStockOut.model_validate(stock, from_attributes=True)
+        for stock in deleted_stocks
+    ]
+
+
 def update_favourite_stock(
     session: Session, user_id: uuid.UUID, id: int, data: FavouriteStockUpdate
 ):
@@ -59,10 +72,23 @@ def update_favourite_stock(
         raise HTTPException(status_code=404, detail="Favourite stock not found.")
 
     updated = crud_favourite_stock.update(session=session, id=id, obj_in=data)
-    return FavouriteStockOut.model_validate(updated, from_attributes=True)
+
+    updated_out = FavouriteStockOut.model_validate(updated, from_attributes=True)
+    return enrich_favourite_stock_with_ticker_details(updated_out)
 
 
-def enrich_favourite_stock_with_ticker_details(favourite_stocks: list[FavouriteStockOut]) -> list[FavouriteStockOut]:
+def enrich_favourite_stock_with_ticker_details(favourite_stock: FavouriteStockOut) -> FavouriteStockOut:
+    if not favourite_stock.symbol:
+        return favourite_stock
+
+    snapshot = fetch_ticker_market_snapshots([favourite_stock.symbol]).get(favourite_stock.symbol)
+    if snapshot:
+        favourite_stock.ticker_details = snapshot
+
+    return favourite_stock
+
+
+def enrich_favourite_stocks_with_ticker_details(favourite_stocks: list[FavouriteStockOut]) -> list[FavouriteStockOut]:
     symbols = [
         favourite.symbol for favourite in favourite_stocks if favourite.symbol
     ]

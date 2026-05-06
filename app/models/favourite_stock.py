@@ -14,7 +14,6 @@ class FavouriteStock(SQLModel, table=True):
     user_id: UUID = Field(foreign_key="public.user_profile.id", index=True)
     symbol: str = Field(index=True, nullable=False)
     exchange: str = Field(index=True, nullable=False)
-    name: Optional[str] = Field(default=None, nullable=True)
     note: Optional[str] = Field(default=None, nullable=True)
     created_at: datetime = Field(
         sa_column=Column(

@@ -3,7 +3,6 @@ from fastapi import Depends
 
 from app.api.dependencies.profile import get_current_profile
 from app.api.deps import SessionDep
-from app.models.favourite_stock import FavouriteStock
 from app.schemas.favourite_stock import FavouriteStockCreate, FavouriteStockOut, FavouriteStockUpdate
 from app.services import favourite_stock_service
 from app.services.user_profile_service import get_user_profile_by_auth
@@ -35,7 +34,6 @@ def add_favourite(
         info = ticker.info
         payload.symbol = info.get("symbol", payload.symbol).upper()
         payload.exchange = info.get("exchange", "Unknown")
-        payload.name = info.get("longName", "Unknown")
     except Exception as e:
         raise HTTPException(
             status_code=400, detail=f"Invalid symbol '{payload.symbol}': {str(e)}"
@@ -51,6 +49,14 @@ def remove_favourite(
     user=Depends(get_current_profile),
 ):
     return favourite_stock_service.remove_favourite_stock(db, user_id=user.id, id=id)
+
+
+@router.delete("/", status_code=status.HTTP_200_OK, response_model=list[FavouriteStockOut])
+def remove_all_favourites(
+    db: SessionDep,
+    user=Depends(get_current_profile),
+):
+    return favourite_stock_service.remove_all_favourite_stocks(db, user_id=user.id)
 
 
 @router.patch("/{id}", response_model=FavouriteStockOut)
@@ -75,6 +81,6 @@ def list_favourites(
         return []
     
     # 2. For each favourite stock, fetch the latest ticker details
-    enriched_favourites = favourite_stock_service.enrich_favourite_stock_with_ticker_details(favourite_stocks)
+    enriched_favourites = favourite_stock_service.enrich_favourite_stocks_with_ticker_details(favourite_stocks)
 
     return enriched_favourites
