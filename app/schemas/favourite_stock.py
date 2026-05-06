@@ -9,7 +9,6 @@ class FavouriteStockBase(BaseModel):
     symbol: str
     exchange: str
     note: Optional[str] = None
-    name: Optional[str] = None
 
 
 class FavouriteStockOut(FavouriteStockBase):
