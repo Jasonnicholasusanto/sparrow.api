@@ -13,7 +13,7 @@ import yfinance as yf
 router = APIRouter(prefix="/favourite-stocks", tags=["Favourite Stocks"])
 
 
-@router.post("/", response_model=FavouriteStock)
+@router.post("/", response_model=FavouriteStockOut)
 def add_favourite(
     payload: FavouriteStockCreate,
     db: SessionDep,
