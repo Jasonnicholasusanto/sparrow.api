@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     ALPHA_VANTAGE_API_KEY: str
     ALPHA_VANTAGE_BASE_URL: str = "https://www.alphavantage.co/query"
 
+    GOOGLE_GEMINI_API_KEY: str | None = None
+
     @computed_field
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> PostgresDsn:
@@ -105,6 +107,7 @@ class Settings(BaseSettings):
     def _enforce_non_default_secrets(self) -> Self:
         self._check_default_secret("SECRET_KEY", self.SECRET_KEY)
         self._check_default_secret("POSTGRES_PASSWORD", self.POSTGRES_PASSWORD)
+        self._check_default_secret("GOOGLE_GEMINI_API_KEY", self.GOOGLE_GEMINI_API_KEY)
         return self
 
 
