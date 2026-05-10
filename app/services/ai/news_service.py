@@ -9,10 +9,10 @@ from app.schemas.news import SummarizeArticleResponse
 
 class NewsAIService:
     def __init__(self) -> None:
-        if not settings.GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY is not configured.")
+        if not settings.GOOGLE_GEMINI_API_KEY:
+            raise ValueError("GOOGLE_GEMINI_API_KEY is not configured.")
 
-        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        self.client = genai.Client(api_key=settings.GOOGLE_GEMINI_API_KEY)
 
     async def summarize_article(
         self,
