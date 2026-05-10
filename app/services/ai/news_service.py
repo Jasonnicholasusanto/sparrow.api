@@ -22,29 +22,29 @@ class NewsAIService:
         source: str | None = None,
     ) -> SummarizeArticleResponse:
         prompt = f"""
-You are Sparrow's financial news analyst.
+            You are Sparrow's financial news analyst.
 
-Summarize the article for a retail investor.
+            Summarize the article for a retail investor.
 
-Return JSON only with:
-- summary: one clear sentence
-- sentiment_label: bullish, bearish, or neutral
-- sentiment_score: number between -1 and 1
-- key_points: max 3 concise bullet points
+            Return JSON only with:
+            - summary: one clear sentence
+            - sentiment_label: bullish, bearish, or neutral
+            - sentiment_score: number between -1 and 1
+            - key_points: max 3 concise bullet points
 
-Rules:
-- Be cautious.
-- Do not invent facts.
-- If the article is macroeconomic or political, use neutral unless there is a clear market impact.
-- Keep the summary understandable for beginners.
+            Rules:
+            - Be cautious.
+            - Do not invent facts.
+            - If the article is macroeconomic or political, use neutral unless there is a clear market impact.
+            - Keep the summary understandable for beginners.
 
-Title: {title}
-Source: {source}
-URL: {url}
+            Title: {title}
+            Source: {source}
+            URL: {url}
 
-Article:
-{article_text[:12000]}
-"""
+            Article:
+            {article_text[:12000]}
+        """
 
         response = self.client.models.generate_content(
             model="gemini-2.5-flash",
