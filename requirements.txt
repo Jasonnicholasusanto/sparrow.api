@@ -9,7 +9,7 @@ curl_cffi==0.13.0
 deprecation==2.1.0
 dnspython==2.8.0
 email_validator==2.2.0
-fastapi==0.116.1
+fastapi==0.136.1
 frozendict==2.4.6
 gotrue==2.12.3
 h11==0.16.0
@@ -50,10 +50,12 @@ StrEnum==0.4.15
 supabase==2.18.1
 supabase_auth==2.12.3
 supabase_functions==0.10.1
-typing-inspection==0.4.1
+typing-inspection==0.4.2
 typing_extensions==4.15.0
 tzdata==2025.2
 urllib3==2.5.0
 uvicorn==0.35.0
 websockets==15.0.1
 yfinance==0.2.66
+trafilatura==2.0.0
+google-genai==2.0.1
