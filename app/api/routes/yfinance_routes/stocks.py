@@ -754,10 +754,10 @@ async def get_ticker_history_simple(
         )
     try:
          # Handle pre/post market inclusion for intraday intervals
-        is_intraday = period == "1d"
         has_prepost_data = ticker_data.info.get("hasPrePostMarketData", False)
+        is_interval_intraday = ("m" in interval or "h" in interval) and "mo" not in interval
 
-        should_include_prepost = inc_prepost and is_intraday and has_prepost_data
+        should_include_prepost = inc_prepost and is_interval_intraday and has_prepost_data
 
         ticker_data = yf.Ticker(symbol)
         history = ticker_data.history(interval=interval, period=period, prepost=should_include_prepost)
@@ -820,9 +820,10 @@ async def get_ticker_history(
 
         # Handle pre/post market inclusion for intraday intervals
         is_intraday = period == "1d"
+        is_interval_intraday = ("m" in interval or "h" in interval) and "mo" not in interval
         has_prepost_data = ticker_data.info.get("hasPrePostMarketData", False)
 
-        should_include_prepost = inc_prepost and is_intraday and has_prepost_data
+        should_include_prepost = inc_prepost and is_interval_intraday and has_prepost_data
 
         # Handle different combinations of parameters for start/end vs period and interval
         if start and end and interval:
