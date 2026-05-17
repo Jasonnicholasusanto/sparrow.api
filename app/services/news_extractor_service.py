@@ -19,6 +19,7 @@ ExtractionStatus = Literal[
 
 SourceUsed = Literal[
     "yahoo",
+    "story_continues",
     "continue_reading",
     "canonical",
     "original_source",
@@ -30,27 +31,29 @@ class NewsContentExtractor:
     def __init__(self, timeout_seconds: int = 10) -> None:
         self.timeout_seconds = timeout_seconds
 
-    async def extract_article_content(
+    async def _extract_recursive(
         self,
         url: str,
-        fallback_title: str | None = None,
-        fallback_summary: str | None = None,
-    ) -> ExtractedArticleContent:
-        """
-        Main extraction flow:
+        original_url: str,
+        fallback_title: str | None,
+        fallback_summary: str | None,
+        source_used: SourceUsed | None,
+        depth: int,
+        visited: set[str],
+        max_depth: int = 3,
+    ) -> ExtractedArticleContent | None:
+        normalized_url = self._normalize_url(url)
 
-        1. Try extracting from the provided URL.
-        2. If content is full, return it.
-        3. If content is partial/metadata-only, try Yahoo's "Continue reading" URL.
-        4. If that fails, try canonical/og URL.
-        5. If all fails, return partial text or metadata-only fallback.
-        """
+        if depth > max_depth or normalized_url in visited:
+            return None
+
+        visited.add(normalized_url)
 
         html, final_url, status_code = await self._fetch_html(url)
 
         if status_code in {401, 403, 429}:
             return self._metadata_only(
-                url=url,
+                url=original_url,
                 final_url=final_url or url,
                 fallback_title=fallback_title,
                 fallback_summary=fallback_summary,
@@ -58,119 +61,153 @@ class NewsContentExtractor:
             )
 
         if not html:
-            return self._metadata_only(
-                url=url,
-                final_url=final_url or url,
-                fallback_title=fallback_title,
-                fallback_summary=fallback_summary,
-                status="failed",
-            )
+            return None
 
         base_url = final_url or url
 
         text = self._extract_text(html)
         quality = self._classify_quality(text)
 
+        resolved_source = source_used or self._source_type(base_url)
+
         if quality == "full":
             return ExtractedArticleContent(
-                url=url,
-                final_url=final_url,
+                url=original_url,
+                final_url=base_url,
                 title=fallback_title,
                 text=text,
                 extraction_status="full",
-                source_used=self._source_type(base_url),
+                source_used=resolved_source,
                 word_count=self._word_count(text),
             )
 
-        # Yahoo often has partial text and a "Continue reading" link
-        # to the original publisher.
-        continue_reading_url = self._extract_continue_reading_url(
+        # Yahoo "Story continues" usually means inline/same-page continuation.
+        # With httpx, we cannot click JS buttons, but we can attempt to extract
+        # any hidden/inline Yahoo article body that is already present in the HTML.
+        has_story_continues = self._has_story_continues_marker(html)
+
+        if has_story_continues:
+            yahoo_text = self._extract_yahoo_article_text(html)
+
+            if yahoo_text and self._word_count(yahoo_text) > self._word_count(text):
+                yahoo_quality = self._classify_quality(yahoo_text)
+
+                if yahoo_quality in {"full", "partial"}:
+                    return ExtractedArticleContent(
+                        url=original_url,
+                        final_url=base_url,
+                        title=fallback_title,
+                        text=yahoo_text,
+                        extraction_status=yahoo_quality,
+                        source_used="story_continues",
+                        word_count=self._word_count(yahoo_text),
+                    )
+
+        # "Continue reading" generally points to the original external publisher.
+        continue_reading_urls = self._extract_continue_reading_urls(
             html=html,
             base_url=base_url,
         )
 
-        if continue_reading_url and not self._same_url(continue_reading_url, url):
-            continue_result = await self._try_extract_from_url(
-                target_url=continue_reading_url,
-                original_url=url,
+        for continue_url in continue_reading_urls:
+            if self._same_url(continue_url, base_url):
+                continue
+
+            continue_result = await self._extract_recursive(
+                url=continue_url,
+                original_url=original_url,
                 fallback_title=fallback_title,
+                fallback_summary=fallback_summary,
                 source_used="continue_reading",
+                depth=depth + 1,
+                visited=visited,
+                max_depth=max_depth,
             )
 
-            if continue_result and continue_result.extraction_status in {
-                "full",
-                "partial",
-            }:
+            if continue_result and continue_result.extraction_status in {"full", "partial"}:
                 return continue_result
 
-        # If no continue-reading URL works, try canonical / og:url / parsely-link.
-        canonical_url = self._extract_canonical_url(html)
+        # Try canonical / og URL recursively.
+        canonical_urls = self._extract_canonical_urls(html)
 
-        if (
-            canonical_url
-            and not self._same_url(canonical_url, url)
-            and not self._same_url(canonical_url, continue_reading_url)
-        ):
-            canonical_result = await self._try_extract_from_url(
-                target_url=canonical_url,
-                original_url=url,
+        for canonical_url in canonical_urls:
+            canonical_url = urljoin(base_url, canonical_url)
+
+            if self._same_url(canonical_url, base_url):
+                continue
+
+            canonical_result = await self._extract_recursive(
+                url=canonical_url,
+                original_url=original_url,
                 fallback_title=fallback_title,
+                fallback_summary=fallback_summary,
                 source_used="canonical",
+                depth=depth + 1,
+                visited=visited,
+                max_depth=max_depth,
             )
 
-            if canonical_result and canonical_result.extraction_status in {
-                "full",
-                "partial",
-            }:
+            if canonical_result and canonical_result.extraction_status in {"full", "partial"}:
                 return canonical_result
 
-        # If the original URL produced some usable text, return it as partial.
         if text:
             return ExtractedArticleContent(
-                url=url,
-                final_url=final_url,
+                url=original_url,
+                final_url=base_url,
                 title=fallback_title,
                 text=text,
                 extraction_status="partial",
-                source_used=self._source_type(base_url),
+                source_used=resolved_source,
                 word_count=self._word_count(text),
             )
 
-        # Last fallback: title/summary metadata only.
-        return self._metadata_only(
+        if depth == 0:
+            return self._metadata_only(
+                url=original_url,
+                final_url=base_url,
+                fallback_title=fallback_title,
+                fallback_summary=fallback_summary,
+                status="metadata_only",
+            )
+
+        return None
+
+    async def extract_article_content(
+        self,
+        url: str,
+        fallback_title: str | None = None,
+        fallback_summary: str | None = None,
+    ) -> ExtractedArticleContent:
+        """
+        Recursive extraction flow:
+
+        1. Try extracting from the provided URL.
+        2. If page has usable/full content, return it.
+        3. If page has "Story continues", try extracting more Yahoo inline content.
+        4. If page has "Continue reading", recursively follow the external URL.
+        5. If needed, recursively try canonical / og:url / parsely-link.
+        6. Fall back to partial text or metadata.
+        """
+
+        result = await self._extract_recursive(
             url=url,
-            final_url=final_url or url,
+            original_url=url,
             fallback_title=fallback_title,
             fallback_summary=fallback_summary,
-            status="metadata_only",
+            source_used=None,
+            depth=0,
+            visited=set(),
         )
 
-    async def _try_extract_from_url(
-        self,
-        target_url: str,
-        original_url: str,
-        fallback_title: str | None,
-        source_used: Literal["continue_reading", "canonical"],
-    ) -> ExtractedArticleContent | None:
-        html, final_url, status_code = await self._fetch_html(target_url)
+        if result:
+            return result
 
-        if status_code in {401, 403, 429} or not html:
-            return None
-
-        text = self._extract_text(html)
-        quality = self._classify_quality(text)
-
-        if quality == "metadata_only":
-            return None
-
-        return ExtractedArticleContent(
-            url=original_url,
-            final_url=final_url or target_url,
-            title=fallback_title,
-            text=text,
-            extraction_status=quality,
-            source_used=source_used,
-            word_count=self._word_count(text),
+        return self._metadata_only(
+            url=url,
+            final_url=url,
+            fallback_title=fallback_title,
+            fallback_summary=fallback_summary,
+            status="failed",
         )
 
     async def _fetch_html(
@@ -225,35 +262,59 @@ class NewsContentExtractor:
 
         return None
 
-    def _extract_continue_reading_url(
+    def _extract_continue_reading_urls(
         self,
         html: str,
         base_url: str,
-    ) -> str | None:
+    ) -> list[str]:
         soup = BeautifulSoup(html, "html.parser")
 
-        # 1. Look for visible text links like "Continue reading"
+        urls: list[str] = []
+        seen: set[str] = set()
+
         for anchor in soup.find_all("a", href=True):
-            text = anchor.get_text(" ", strip=True).lower()
+            text_parts = [
+                anchor.get_text(" ", strip=True),
+                anchor.get("aria-label") or "",
+                anchor.get("title") or "",
+            ]
 
-            if self._is_continue_reading_text(text):
-                return urljoin(base_url, anchor["href"])
+            combined_text = " ".join(text_parts).lower()
 
-        # 2. Some pages use aria-label instead of visible text.
-        for anchor in soup.find_all("a", href=True):
-            aria_label = (anchor.get("aria-label") or "").lower()
+            if not self._is_continue_reading_text(combined_text):
+                continue
 
-            if self._is_continue_reading_text(aria_label):
-                return urljoin(base_url, anchor["href"])
+            href = anchor.get("href")
 
-        # 3. Some links may have title attributes.
-        for anchor in soup.find_all("a", href=True):
-            title = (anchor.get("title") or "").lower()
+            if not href:
+                continue
 
-            if self._is_continue_reading_text(title):
-                return urljoin(base_url, anchor["href"])
+            absolute_url = urljoin(base_url, href)
+            normalized_url = self._normalize_url(absolute_url)
 
-        return None
+            if normalized_url in seen:
+                continue
+
+            seen.add(normalized_url)
+            urls.append(absolute_url)
+
+        return urls
+
+    def _has_story_continues_marker(self, html: str) -> bool:
+        soup = BeautifulSoup(html, "html.parser")
+
+        marker_texts = [
+            "story continues",
+            "story continues below",
+        ]
+
+        for node in soup.find_all(["button", "a", "span", "div", "p"]):
+            text = node.get_text(" ", strip=True).lower()
+
+            if any(marker in text for marker in marker_texts):
+                return True
+
+        return False
 
     def _is_continue_reading_text(self, text: str) -> bool:
         markers = [
@@ -262,12 +323,17 @@ class NewsContentExtractor:
             "read full article",
             "view full article",
             "full article",
+            "continue to article",
+            "read the full story",
         ]
 
         return any(marker in text for marker in markers)
 
-    def _extract_canonical_url(self, html: str) -> str | None:
+    def _extract_canonical_urls(self, html: str) -> list[str]:
         soup = BeautifulSoup(html, "html.parser")
+
+        candidates: list[str] = []
+        seen: set[str] = set()
 
         selectors = [
             ("link", {"rel": "canonical"}),
@@ -282,16 +348,34 @@ class NewsContentExtractor:
             if not tag:
                 continue
 
+            value = None
+
             if tag_name == "link":
-                href = tag.get("href")
-                if href:
-                    return str(href)
+                value = tag.get("href")
+            else:
+                value = tag.get("content")
 
-            content = tag.get("content")
-            if content:
-                return str(content)
+            if not value:
+                continue
 
-        return None
+            normalized = self._normalize_url(str(value))
+
+            if normalized in seen:
+                continue
+
+            seen.add(normalized)
+            candidates.append(str(value))
+
+        return candidates
+
+    def _normalize_url(self, url: str) -> str:
+        parsed = urlparse(url)
+
+        scheme = parsed.scheme.lower()
+        netloc = parsed.netloc.lower()
+        path = parsed.path.rstrip("/")
+
+        return f"{scheme}://{netloc}{path}"
 
     def _extract_yahoo_article_text(self, html: str) -> str | None:
         soup = BeautifulSoup(html, "html.parser")
@@ -407,7 +491,7 @@ class NewsContentExtractor:
         if not left or not right:
             return False
 
-        return left.rstrip("/") == right.rstrip("/")
+        return self._normalize_url(left) == self._normalize_url(right)
 
     def _word_count(self, text: str | None) -> int:
         if not text:
