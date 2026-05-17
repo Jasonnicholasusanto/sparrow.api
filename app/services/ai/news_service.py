@@ -4,50 +4,50 @@ from google import genai
 from google.genai import types
 
 from app.core.config import settings
-from app.schemas.news import SummarizeArticleResponse
+from app.schemas.news import ExtractedArticleContent, SummarizeArticleResponse
 
 
 class NewsAIService:
     def __init__(self) -> None:
-        if not settings.GOOGLE_GEMINI_API_KEY:
-            raise ValueError("GOOGLE_GEMINI_API_KEY is not configured.")
+        if not settings.GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY is not configured.")
 
-        self.client = genai.Client(api_key=settings.GOOGLE_GEMINI_API_KEY)
+        self.client = genai.Client()
 
     async def summarize_article(
         self,
         url: str,
-        article_text: str,
+        extracted: ExtractedArticleContent,
         title: str | None = None,
         source: str | None = None,
     ) -> SummarizeArticleResponse:
         prompt = f"""
             You are Sparrow's financial news analyst.
 
-            Summarize the article for a retail investor.
+            You are summarizing a news article for a retail investor.
 
-            Return JSON only with:
-            - summary: one clear sentence
-            - sentiment_label: bullish, bearish, or neutral
-            - sentiment_score: number between -1 and 1
-            - key_points: max 3 concise bullet points
+            Extraction status: {extracted.extraction_status}
+            Source used: {extracted.source_used}
+            Word count: {extracted.word_count}
 
-            Rules:
-            - Be cautious.
-            - Do not invent facts.
-            - If the article is macroeconomic or political, use neutral unless there is a clear market impact.
-            - Keep the summary understandable for beginners.
+            Important rules:
+            - If extraction_status is "full", summarize normally.
+            - If extraction_status is "partial", say the summary is based on the available excerpt.
+            - If extraction_status is "metadata_only", only summarize what can be inferred from the title/source/metadata.
+            - Do not pretend you read the full article.
+            - Do not invent details.
+            - Keep it useful but cautious.
 
             Title: {title}
-            Source: {source}
             URL: {url}
+            Source: {source}
 
-            Article:
-            {article_text[:12000]}
+            Available article text:
+            {extracted.text[:12000] if extracted.text else ""}
         """
 
         response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.1-flash-lite",
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.2,

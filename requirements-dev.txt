@@ -12,9 +12,10 @@ deprecation==2.1.0
 distlib==0.4.0
 dnspython==2.7.0
 email_validator==2.2.0
-fastapi==0.116.1
-fastapi-cli==0.0.8
-fastapi-cloud-cli==0.1.4
+fastapi==0.136.1
+fastapi-cli==0.0.24
+fastapi-cloud-cli==0.15.0
+frozendict==2.4.6
 filelock==3.18.0
 frozendict==2.4.6
 gotrue==2.12.3
@@ -86,4 +87,7 @@ uvloop==0.21.0
 virtualenv==20.33.1
 watchfiles==1.1.0
 websockets==15.0.1
-yfinance==0.2.65
+yfinance==0.2.66
+trafilatura==2.0.0
+google-genai==2.0.1
+google-auth==2.52.0

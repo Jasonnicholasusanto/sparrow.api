@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies.profile import get_current_profile
 from app.schemas.news import (
+    ExtractedArticleContent,
     LatestNewsResponse,
     SearchNewsResponse,
     StockNewsBatchRequest,
@@ -21,22 +22,6 @@ router = APIRouter(prefix="/news", tags=["News"])
 
 def get_news_service() -> NewsService:
     return NewsService()
-
-
-@router.get("/test")
-async def test_news_provider(query: str = Query(default="test"), limit: int = Query(default=10)):
-    search = yf.Search(
-                query=query,
-                max_results=0,
-                news_count=limit,
-                lists_count=0,
-                include_research=False,
-                include_cultural_assets=False,
-                enable_fuzzy_query=True,
-                raise_errors=False,
-            )
-    search.search()
-    return search.news
 
 
 @router.get("/latest", response_model=LatestNewsResponse)
@@ -148,31 +133,71 @@ async def search_news(
         )
     
 
-@router.post("/articles/summarize", response_model=SummarizeArticleResponse)
-async def summarize_news_article(request: SummarizeArticleRequest):
+@router.post("/articles/retrieve", response_model=ExtractedArticleContent)
+async def retrieve_article_content(
+    url: str = Query(..., description="URL of the news article to retrieve"),
+    title: str | None = Query(None, description="Fallback article title"),
+    summary: str | None = Query(None, description="Fallback article summary"),
+    user=Depends(get_current_profile),
+):
     try:
         extractor = NewsContentExtractor()
-        article_text = await extractor.extract_article_text(request.url)
 
-        if not article_text:
+        extracted = await extractor.extract_article_content(
+            url=url,
+            fallback_title=title,
+            fallback_summary=summary,
+        )
+
+        if not extracted.text:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Could not extract readable article text from URL.",
             )
 
-        ai_service = NewsAIService()
-
-        return await ai_service.summarize_article(
-            url=request.url,
-            article_text=article_text,
-            title=request.title,
-            source=request.source,
-        )
+        return extracted
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to summarize article: {str(e)}",
+            detail=f"Failed to retrieve article content: {str(e)}",
         )
+    
+
+# @router.post("/articles/summarize", response_model=SummarizeArticleResponse)
+# async def summarize_news_article(
+#     request: SummarizeArticleRequest, 
+#     user=Depends(get_current_profile)
+# ):
+#     try:
+#         extractor = NewsContentExtractor()
+#         extracted = await extractor.extract_article_content(
+#             url=request.url,
+#             fallback_title=request.title,
+#             fallback_summary=request.summary,
+#         )
+
+#         if not extracted:
+#             raise HTTPException(
+#                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+#                 detail="Could not extract readable article text from URL.",
+#             )
+
+#         ai_service = NewsAIService()
+
+#         return await ai_service.summarize_article(
+#             url=request.url,
+#             extracted=extracted,
+#             title=request.title,
+#             source=request.source,
+#         )
+
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Failed to summarize article: {str(e)}",
+#         )

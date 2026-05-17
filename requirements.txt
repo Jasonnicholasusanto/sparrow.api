@@ -9,7 +9,7 @@ curl_cffi==0.13.0
 deprecation==2.1.0
 dnspython==2.8.0
 email_validator==2.2.0
-fastapi==0.116.1
+fastapi==0.136.1
 frozendict==2.4.6
 gotrue==2.12.3
 h11==0.16.0

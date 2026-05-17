@@ -51,6 +51,7 @@ class SummarizeArticleRequest(BaseModel):
     url: str
     title: str | None = None
     source: str | None = None
+    summary: str | None = None 
 
 
 class SummarizeArticleResponse(BaseModel):
@@ -59,3 +60,24 @@ class SummarizeArticleResponse(BaseModel):
     sentiment_label: Literal["bullish", "bearish", "neutral"]
     sentiment_score: float = Field(..., ge=-1, le=1)
     key_points: list[str] = Field(default_factory=list)
+
+
+class ExtractedArticleContent(BaseModel):
+    url: str
+    final_url: str | None = None
+    title: str | None = None
+    text: str | None = None
+    extraction_status: Literal[
+        "full",
+        "partial",
+        "metadata_only",
+        "blocked",
+        "failed",
+    ]
+    source_used: Literal[
+        "yahoo",
+        "canonical",
+        "original_source",
+        "metadata",
+    ]
+    word_count: int = 0
