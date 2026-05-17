@@ -732,14 +732,15 @@ async def get_analyst_recommendations_summary(
 async def get_ticker_history_simple(
     symbol: str,
     user=Depends(get_current_profile),
-    period: str = Query(
-        "1mo",
-        description=f"Valid periods: {', '.join(list(STOCK_PERIODS))}",
-    ),
     interval: str = Query(
         "1d",
         description=f"Valid intervals: {', '.join(list(STOCK_INTERVALS))} (Intraday data cannot extend last 60 days)",
     ),
+    period: str = Query(
+        "1mo",
+        description=f"Valid periods: {', '.join(list(STOCK_PERIODS))}",
+    ),
+    inc_prepost: bool = Query(False, description="Include pre/post market data (only applicable for intraday intervals)"),
 ):
     if interval not in STOCK_INTERVALS:
         raise HTTPException(
@@ -752,8 +753,14 @@ async def get_ticker_history_simple(
             detail=f"Invalid period '{period}'. Must be one of {sorted(list(STOCK_PERIODS))}",
         )
     try:
+         # Handle pre/post market inclusion for intraday intervals
+        is_intraday = period == "1d"
+        has_prepost_data = ticker_data.info.get("hasPrePostMarketData", False)
+
+        should_include_prepost = inc_prepost and is_intraday and has_prepost_data
+
         ticker_data = yf.Ticker(symbol)
-        history = ticker_data.history(interval=interval, period=period)
+        history = ticker_data.history(interval=interval, period=period, prepost=should_include_prepost)
 
         if history.empty:
             return {"symbol": symbol, "history": []}
@@ -791,6 +798,7 @@ async def get_ticker_history(
         "1mo",
         description=f"Alternative to start/end: {', '.join(list(STOCK_PERIODS))}",
     ),
+    inc_prepost: bool = Query(False, description="Include pre/post market data (only applicable for intraday intervals)")
 ):
     if interval not in STOCK_INTERVALS:
         raise HTTPException(
@@ -810,20 +818,20 @@ async def get_ticker_history(
     try:
         ticker_data = yf.Ticker(symbol)
 
-        if period and period == "1d":
-            is_intraday = True
-            inc_prepost = True and ticker_data.info.get("hasPrePostMarketData", False)
-        else:
-            is_intraday = False
-            inc_prepost = False
+        # Handle pre/post market inclusion for intraday intervals
+        is_intraday = period == "1d"
+        has_prepost_data = ticker_data.info.get("hasPrePostMarketData", False)
 
+        should_include_prepost = inc_prepost and is_intraday and has_prepost_data
+
+        # Handle different combinations of parameters for start/end vs period and interval
         if start and end and interval:
             history = ticker_data.history(
-                interval=interval, start=start, end=end, prepost=inc_prepost
+                interval=interval, start=start, end=end, prepost=should_include_prepost
             )
         elif period and interval:
             history = ticker_data.history(
-                interval=interval, period=period, prepost=inc_prepost
+                interval=interval, period=period, prepost=should_include_prepost
             )
         else:
             raise HTTPException(
