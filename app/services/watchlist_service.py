@@ -683,6 +683,45 @@ def add_many_items_to_watchlist(
     ]
 
 
+def update_watchlist_item(
+    session: Session,
+    *,
+    item_id: int,
+    user_profile_id: uuid.UUID,
+    update_data: WatchlistItemCreateWithoutId,
+) -> WatchlistItem:
+    """
+    Update a watchlist item if the user has edit permission on its parent watchlist.
+    """
+    # 1. Fetch the item
+    item = watchlist_item_crud.get(session, id=item_id)
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Watchlist item not found.",
+        )
+
+    # 2. Check user edit access on the watchlist associated with the item
+    has_access = user_can_edit_watchlist(
+        session=session,
+        watchlist_id=item.watchlist_id,
+        user_id=user_profile_id,
+    )
+    if not has_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to edit this item.",
+        )
+
+    # 3. Update the item
+    updated = watchlist_item_crud.update(
+        session=session,
+        id=item_id,
+        obj_in=update_data,
+    )
+    return updated
+
+
 def delete_watchlist_item(
     session: Session,
     *,
