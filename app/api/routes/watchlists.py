@@ -57,6 +57,7 @@ from app.services.watchlist_service import (
     share_watchlist_with_user,
     unbookmark_watchlist,
     update_user_watchlist,
+    update_watchlist_item,
     update_watchlist_share_permission,
     user_can_edit_watchlist,
     validate_watchlist_allocation,
@@ -370,6 +371,33 @@ def add_bulk_watchlist_items_to_watchlist(
     )
 
     return {"count": len(new_items), "items": new_items}
+
+
+@router.patch("/item/{item_id}", status_code=status.HTTP_200_OK)
+def update_watchlist_item_route(
+    item_id: int,
+    item_data: WatchlistItemUpdate,
+    db: SessionDep,
+    user=Depends(get_current_profile),
+):
+    """
+    Update a specific watchlist item if the user has edit access.
+    """
+    # Perform update
+    updated_item = update_watchlist_item(
+        session=db,
+        item_id=item_id,
+        update_data=item_data,
+        user_profile_id=user.id,
+    )
+
+    if not updated_item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Item not found or you do not have permission to edit it.",
+        )
+
+    return {"message": "Item updated successfully.", "item": updated_item}
 
 
 @router.delete("/item/{item_id}", status_code=status.HTTP_200_OK)
