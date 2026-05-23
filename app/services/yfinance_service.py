@@ -10,27 +10,16 @@ from app.utils.functions import safe_json_float
 def build_ticker_market_snapshot(fi: dict[str, Any] | None) -> TickerMarketSnapshotResponse:
     fi = fi or {}
 
-    last_price = safe_json_float(fi.get("lastPrice"))
+    last_price = safe_json_float(fi.get("regularMarketPrice") or fi.get("currentPrice"))
     previous_close = safe_json_float(
         fi.get("regularMarketPreviousClose") or fi.get("previousClose")
     )
-    volume = safe_json_float(fi.get("lastVolume"))
-
-    regular_market_change = None
-    regular_market_change_percent = None
-
-    if (
-        last_price is not None
-        and previous_close is not None
-        and previous_close != 0
-    ):
-        change = last_price - previous_close
-        pct = (change / previous_close) * 100
-
-        regular_market_change = safe_json_float(change)
-        regular_market_change_percent = safe_json_float(pct)
+    volume = safe_json_float(fi.get("regularMarketVolume") or fi.get("volume"))
+    regular_market_change = fi.get("regularMarketChange")
+    regular_market_change_percent = fi.get("regularMarketChangePercent")
 
     return TickerMarketSnapshotResponse(
+        ticker_name=fi.get("longName") or fi.get("shortName"),
         last_price=safe_json_float(last_price),
         currency=fi.get("currency"),
         previous_close=safe_json_float(previous_close),
@@ -56,9 +45,9 @@ def fetch_ticker_market_snapshots(symbols: list[str]) -> dict[str, TickerMarketS
 
     for symbol in normalized_symbols:
         try:
-            raw_fi = tickers_data.tickers[symbol].fast_info
-            fi = dict(raw_fi) if raw_fi else {}
-            results[symbol] = build_ticker_market_snapshot(fi)
+            info = tickers_data.tickers[symbol].info
+            i = dict(info) if info else {}
+            results[symbol] = build_ticker_market_snapshot(i)
         except Exception:
             results[symbol] = None
 

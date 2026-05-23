@@ -557,6 +557,7 @@ class MultiTickerSparklineResponse(BaseModel):
 
 
 class TickerMarketSnapshotResponse(BaseModel):
+    ticker_name: Optional[str] = None
     last_price: Optional[float] = None
     currency: Optional[str] = None
     previous_close: Optional[float] = None
