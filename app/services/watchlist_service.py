@@ -32,6 +32,7 @@ from app.schemas.watchlist_item import (
     WatchlistItemCreate,
     WatchlistItemCreateWithoutId,
     WatchlistItemOut,
+    WatchlistItemPositionDetailsOut,
 )
 from app.schemas.watchlist_share import WatchlistShareCreate
 import yfinance as yf
@@ -66,17 +67,79 @@ def build_watchlist_out(
     )
 
 
-def enrich_watchlists(watchlists: list[WatchlistOut], snapshot_map: dict[str, TickerMarketSnapshotResponse | None]) -> list[WatchlistOut]:
+def calculate_watchlist_item_position_details(
+    quantity: float | None,
+    ticker_details: TickerMarketSnapshotResponse | None,
+) -> WatchlistItemPositionDetailsOut | None:
+    if quantity is None or ticker_details is None:
+        return None
+
+    last_price = ticker_details.last_price
+    previous_close = ticker_details.previous_close
+    regular_market_change = ticker_details.regular_market_change
+    regular_market_change_percent = ticker_details.regular_market_change_percent
+
+    market_value = (
+        quantity * last_price
+        if last_price is not None
+        else None
+    )
+
+    previous_market_value = (
+        quantity * previous_close
+        if previous_close is not None
+        else None
+    )
+
+    day_change_value = (
+        quantity * regular_market_change
+        if regular_market_change is not None
+        else None
+    )
+
+    return WatchlistItemPositionDetailsOut(
+        quantity=quantity,
+        market_value=round(market_value, 2) if market_value is not None else None,
+        previous_market_value=round(previous_market_value, 2)
+        if previous_market_value is not None
+        else None,
+        day_change_value=round(day_change_value, 2)
+        if day_change_value is not None
+        else None,
+        day_change_percent=regular_market_change_percent,
+        currency=ticker_details.currency,
+    )
+
+
+def enrich_watchlists(
+    watchlists: list[WatchlistOut],
+    snapshot_map: dict[str, TickerMarketSnapshotResponse | None],
+) -> list[WatchlistOut]:
     enriched_watchlists: list[WatchlistOut] = []
 
     for watchlist in watchlists:
-        enriched_items = [
-            WatchlistItemOut(
-                **item.model_dump(exclude={"ticker_details"}),
-                ticker_details=snapshot_map.get((item.symbol or "").upper()),
+        enriched_items: list[WatchlistItemOut] = []
+
+        for item in watchlist.items or []:
+            ticker_details = snapshot_map.get((item.symbol or "").upper())
+
+            position_details = calculate_watchlist_item_position_details(
+                quantity=item.quantity,
+                ticker_details=ticker_details,
             )
-            for item in (watchlist.items or [])
-        ]
+
+            enriched_items.append(
+                WatchlistItemOut(
+                    **item.model_dump(
+                        exclude={
+                            "ticker_details",
+                            "position_details",
+                        }
+                    ),
+                    ticker_details=ticker_details,
+                    position_details=position_details,
+                )
+            )
 
         enriched_watchlists.append(
             WatchlistOut(
