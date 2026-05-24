@@ -37,13 +37,13 @@ class WatchlistItemUpdate(BaseModel):
     reference_price: Optional[float] = Field(default=None, ge=0.0)
 
 
-class WatchlistItemTickerDetails(BaseModel):
-    last_price: Optional[float] = None
+class WatchlistItemPositionDetailsOut(BaseModel):
+    quantity: Optional[float] = None
+    market_value: Optional[float] = None
+    previous_market_value: Optional[float] = None
+    day_change_value: Optional[float] = None
+    day_change_percent: Optional[float] = None
     currency: Optional[str] = None
-    previous_close: Optional[float] = None
-    volume: Optional[int] = None
-    regular_market_change: Optional[float] = None
-    regular_market_change_percent: Optional[float] = None
 
 
 class WatchlistItemOut(WatchlistItemBase):
@@ -54,3 +54,4 @@ class WatchlistItemOut(WatchlistItemBase):
     created_at: datetime
     updated_at: datetime
     ticker_details: Optional[TickerMarketSnapshotResponse] = None
+    position_details: Optional[WatchlistItemPositionDetailsOut] = None
