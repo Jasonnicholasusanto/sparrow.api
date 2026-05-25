@@ -870,7 +870,7 @@ def update_watchlist_item(
     item_id: int,
     user_profile_id: uuid.UUID,
     update_data: WatchlistItemCreateWithoutId,
-) -> WatchlistItem:
+) -> WatchlistItemOut:
     """
     Update a watchlist item if the user has edit permission on its parent watchlist.
     """
@@ -900,7 +900,24 @@ def update_watchlist_item(
         id=item_id,
         obj_in=update_data,
     )
-    return updated
+    session.refresh(updated)
+
+    updated_item_out = WatchlistItemOut.model_validate(updated)
+
+    snapshot_map = fetch_ticker_market_snapshots([updated_item_out.symbol])
+    ticker_details = snapshot_map.get(updated_item_out.symbol.upper())
+
+    position_details = calculate_watchlist_item_position_details(
+        quantity=updated_item_out.quantity,
+        ticker_details=ticker_details,
+    )
+
+    return updated_item_out.model_copy(
+        update={
+            "ticker_details": ticker_details,
+            "position_details": position_details,
+        }
+    )
 
 
 def delete_watchlist_item(
@@ -908,7 +925,7 @@ def delete_watchlist_item(
     *,
     item_id: int,
     user_profile_id: uuid.UUID,
-) -> WatchlistItem:
+) -> WatchlistItemOut:
     """
     Deletes a watchlist item if the user has edit permission on its parent watchlist.
     """
@@ -934,7 +951,8 @@ def delete_watchlist_item(
 
     # 3. Delete the item
     deleted = watchlist_item_crud.remove(session, id=item_id)
-    return deleted
+    
+    return WatchlistItemOut.model_validate(deleted)
 
 
 def delete_watchlist(
