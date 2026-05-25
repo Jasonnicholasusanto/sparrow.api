@@ -324,7 +324,10 @@ def add_watchlist_item_to_watchlist(
         item=item,
         user_profile_id=user.id,
     )
-    return {"message": "Item added successfully", "item": new_item}
+
+    new_item_out = WatchlistItemOut.model_validate(new_item, from_attributes=True)
+
+    return {"message": "Item added successfully", "item": new_item_out}
 
 
 @router.post("/{watchlist_id}/add-items", status_code=status.HTTP_200_OK)

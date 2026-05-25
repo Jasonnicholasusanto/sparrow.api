@@ -663,12 +663,10 @@ def add_item_to_watchlist(
     watchlist_id: int,
     user_profile_id: uuid.UUID,
     item: WatchlistItemCreate,
-) -> WatchlistItem:
+) -> WatchlistItemOut:
     """
-    Add a new item to the specified watchlist.
-    Uses CRUDWatchlistItem.create() for persistence.
+    Add a new item to the specified watchlist and return an enriched response DTO.
     """
-    # 1. Validate edit permissions
     user_access = user_can_edit_watchlist(
         session=session,
         watchlist_id=watchlist_id,
@@ -681,7 +679,6 @@ def add_item_to_watchlist(
             detail="You do not have permission to edit this watchlist.",
         )
 
-    # 2. Prevent duplicate entries
     if watchlist_item_exists(
         session=session,
         watchlist_id=watchlist_id,
@@ -693,19 +690,34 @@ def add_item_to_watchlist(
             detail=f"Symbol '{item.symbol}' already exists in this watchlist.",
         )
 
-    # 3. Create the item
     item_in = WatchlistItemCreate(
-        symbol=item.symbol,
-        exchange=item.exchange,
-        note=item.note,
-        position=item.position,
+        **item.model_dump(exclude={"watchlist_id"}),
         watchlist_id=watchlist_id,
     )
 
-    return watchlist_item_crud.create(
+    new_item = watchlist_item_crud.create(
         session=session,
         watchlist_id=watchlist_id,
         obj_in=item_in,
+    )
+
+    session.refresh(new_item)
+
+    new_item_out = WatchlistItemOut.model_validate(new_item)
+
+    snapshot_map = fetch_ticker_market_snapshots([new_item_out.symbol])
+    ticker_details = snapshot_map.get(new_item_out.symbol.upper())
+
+    position_details = calculate_watchlist_item_position_details(
+        quantity=new_item_out.quantity,
+        ticker_details=ticker_details,
+    )
+
+    return new_item_out.model_copy(
+        update={
+            "ticker_details": ticker_details,
+            "position_details": position_details,
+        }
     )
 
 
