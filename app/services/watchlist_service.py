@@ -42,6 +42,14 @@ from app.services.yfinance_service import fetch_ticker_market_snapshots
 from app.utils.global_variables import WATCHLIST_GROUP_KEYS
 
 
+def sort_watchlists_by_updated_at_desc(watchlists):
+    return sorted(
+        watchlists or [],
+        key=lambda watchlist: watchlist.updated_at,
+        reverse=True,
+    )
+
+
 def build_watchlist_out(
     w: Watchlist,
     items_by_watchlist_id: dict[int, list[WatchlistItem]],
@@ -357,10 +365,18 @@ def enrich_user_watchlists_with_market_snapshots(
     snapshot_map = fetch_ticker_market_snapshots(symbols)
 
     return UserWatchlistsGroupedResultsOut(
-        created=enrich_watchlists(user_watchlists.created, snapshot_map),
-        forked=enrich_watchlists(user_watchlists.forked, snapshot_map),
-        shared=enrich_watchlists(user_watchlists.shared, snapshot_map),
-        bookmarked=enrich_watchlists(user_watchlists.bookmarked, snapshot_map),
+        created=sort_watchlists_by_updated_at_desc(
+            enrich_watchlists(user_watchlists.created, snapshot_map)
+        ),
+        forked=sort_watchlists_by_updated_at_desc(
+            enrich_watchlists(user_watchlists.forked, snapshot_map)
+        ),
+        shared=sort_watchlists_by_updated_at_desc(
+            enrich_watchlists(user_watchlists.shared, snapshot_map)
+        ),
+        bookmarked=sort_watchlists_by_updated_at_desc(
+            enrich_watchlists(user_watchlists.bookmarked, snapshot_map)
+        ),
         total_count=user_watchlists.total_count,
         counts=user_watchlists.counts,
     )
@@ -725,23 +741,80 @@ def add_many_items_to_watchlist(
     session: Session,
     *,
     watchlist_id: int,
-    items: Iterable[Union[WatchlistItemCreate, WatchlistItemCreateWithoutId]],
-) -> List[WatchlistItemBase]:
+    user_profile_id: uuid.UUID,
+    items: Iterable[WatchlistItemBase],
+) -> list[WatchlistItemOut]:
     """
-    Add multiple items to the specified watchlist.
-    Uses CRUDWatchlistItem.create_many() for persistence.
+    Add multiple items to the specified watchlist and return enriched response DTOs.
     """
+    items = list(items)
+
     if not items:
         return []
 
+    # 1. Validate edit permissions
+    user_access = user_can_edit_watchlist(
+        session=session,
+        watchlist_id=watchlist_id,
+        user_id=user_profile_id,
+    )
+
+    if not user_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to edit this watchlist.",
+        )
+
+    # 2. Check duplicates already in the watchlist
+    existing_symbols: set[str] = set()
+
+    for item in items:
+        if watchlist_item_exists(
+            session=session,
+            watchlist_id=watchlist_id,
+            symbol=item.symbol,
+            exchange=item.exchange,
+        ):
+            existing_symbols.add(item.symbol)
+
+    if existing_symbols:
+        symbols_list = ", ".join(sorted(existing_symbols))
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Symbols [{symbols_list}] already exist in this watchlist.",
+        )
+
+    # 3. Check duplicates within the incoming payload itself
+    seen_keys: set[tuple[str, str | None]] = set()
+    duplicate_payload_symbols: set[str] = set()
+
+    for item in items:
+        key = ((item.symbol or "").upper(), item.exchange)
+
+        if key in seen_keys:
+            duplicate_payload_symbols.add(item.symbol)
+        else:
+            seen_keys.add(key)
+
+    if duplicate_payload_symbols:
+        symbols_list = ", ".join(sorted(duplicate_payload_symbols))
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Duplicate symbols [{symbols_list}] were provided in the request.",
+        )
+
+    # 4. Normalize items
     normalized_items = [
         WatchlistItemCreate(
+            **item.model_dump(exclude={"watchlist_id"}),
             watchlist_id=watchlist_id,
-            **{k: v for k, v in item.model_dump().items() if k != "watchlist_id"},
         )
         for item in items
     ]
 
+    # 5. Create items in bulk
     db_items = watchlist_item_crud.create_many(
         session=session,
         watchlist_id=watchlist_id,
@@ -749,13 +822,46 @@ def add_many_items_to_watchlist(
     )
 
     session.commit()
+
     for db_item in db_items:
         session.refresh(db_item)
 
-    return [
-        WatchlistItemBase.model_validate(db_item, from_attributes=True)
+    # 6. Convert DB models to DTOs
+    item_outputs = [
+        WatchlistItemOut.model_validate(db_item)
         for db_item in db_items
     ]
+
+    # 7. Fetch ticker snapshots in one request
+    symbols = [
+        item.symbol
+        for item in item_outputs
+        if item.symbol
+    ]
+
+    snapshot_map = fetch_ticker_market_snapshots(symbols)
+
+    # 8. Attach ticker_details and position_details
+    enriched_items: list[WatchlistItemOut] = []
+
+    for item_out in item_outputs:
+        ticker_details = snapshot_map.get((item_out.symbol or "").upper())
+
+        position_details = calculate_watchlist_item_position_details(
+            quantity=item_out.quantity,
+            ticker_details=ticker_details,
+        )
+
+        enriched_items.append(
+            item_out.model_copy(
+                update={
+                    "ticker_details": ticker_details,
+                    "position_details": position_details,
+                }
+            )
+        )
+
+    return enriched_items
 
 
 def update_watchlist_item(
