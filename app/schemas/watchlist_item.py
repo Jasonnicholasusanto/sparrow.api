@@ -22,6 +22,11 @@ class WatchlistItemCreate(WatchlistItemBase):
     watchlist_id: int
 
 
+class AddBulkWatchlistItemsResponse(BaseModel):
+    count: int
+    items: list[WatchlistItemOut]
+
+
 class WatchlistItemCreateWithoutId(WatchlistItemBase):
     """Used when watchlist_id is not known yet."""
 

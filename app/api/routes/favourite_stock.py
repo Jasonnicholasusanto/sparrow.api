@@ -83,4 +83,4 @@ def list_favourites(
     # 2. For each favourite stock, fetch the latest ticker details
     enriched_favourites = favourite_stock_service.enrich_favourite_stocks_with_ticker_details(favourite_stocks)
 
-    return enriched_favourites
+    return sorted(enriched_favourites, key=lambda x: x.symbol)

@@ -1,4 +1,3 @@
-from typing import List
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -21,6 +20,7 @@ from app.schemas.watchlist_detail import (
     WatchlistsDetail,
 )
 from app.schemas.watchlist_item import (
+    AddBulkWatchlistItemsResponse,
     WatchlistItemBase,
     WatchlistItemOut,
     WatchlistItemUpdate,
@@ -36,7 +36,6 @@ from app.services.watchlist_service import (
     add_item_to_watchlist,
     add_many_items_to_watchlist,
     bookmark_watchlist,
-    create_watchlist_for_user,
     create_watchlist_with_details_for_user,
     delete_watchlist,
     delete_watchlist_item,
@@ -122,7 +121,7 @@ def get_my_watchlists(
 
     # 2. Retrieve ticker information for all items in these watchlists
     enriched_watchlists = enrich_user_watchlists_with_market_snapshots(user_watchlists)
-
+    
     # 3. Return enriched watchlists with pagination metadata
     return UserWatchlistsResponseOut(
         limit=limit,
@@ -172,6 +171,7 @@ def get_public_watchlists_by_username(
     # 2. Retrieve ticker information for all items in these watchlists
     enriched_watchlists = enrich_user_watchlists_with_market_snapshots(watchlists)
     
+    # 3. Return enriched watchlists with pagination metadata
     return UserWatchlistsResponseOut(
         limit=limit,
         offset=offset,
@@ -324,53 +324,34 @@ def add_watchlist_item_to_watchlist(
         item=item,
         user_profile_id=user.id,
     )
-    return {"message": "Item added successfully", "item": new_item}
+
+    new_item_out = WatchlistItemOut.model_validate(new_item, from_attributes=True)
+
+    return {"message": "Item added successfully", "item": new_item_out}
 
 
-@router.post("/{watchlist_id}/add-items", status_code=status.HTTP_200_OK)
+@router.post(
+    "/{watchlist_id}/add-items",
+    status_code=status.HTTP_200_OK,
+    response_model=AddBulkWatchlistItemsResponse,
+)
 def add_bulk_watchlist_items_to_watchlist(
     watchlist_id: int,
-    items: List[WatchlistItemBase],
+    items: list[WatchlistItemBase],
     db: SessionDep,
     user=Depends(get_current_profile),
 ):
-    # 1. Validate edit permissions
-    user_access = user_can_edit_watchlist(
-        session=db,
-        watchlist_id=watchlist_id,
-        user_id=user.id,
-    )
-    if not user_access:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to edit this watchlist.",
-        )
-
-    # 2. Check for duplicates within the provided items
-    watchlist_items_existing_symbols = set()
-    for item in items:
-        if watchlist_item_exists(
-            session=db,
-            watchlist_id=watchlist_id,
-            symbol=item.symbol,
-            exchange=item.exchange,
-        ):
-            watchlist_items_existing_symbols.add(item.symbol)
-    if watchlist_items_existing_symbols:
-        symbols_list = ", ".join(sorted(watchlist_items_existing_symbols))
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Symbols [{symbols_list}] already exists in this watchlist.",
-        )
-
-    # 3. Add the items in bulk
     new_items = add_many_items_to_watchlist(
         session=db,
         watchlist_id=watchlist_id,
+        user_profile_id=user.id,
         items=items,
     )
 
-    return {"count": len(new_items), "items": new_items}
+    return AddBulkWatchlistItemsResponse(
+        count=len(new_items),
+        items=new_items,
+    )
 
 
 @router.patch("/item/{item_id}", status_code=status.HTTP_200_OK)
