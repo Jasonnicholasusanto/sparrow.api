@@ -1,7 +1,7 @@
 from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional
 import uuid
 from fastapi import HTTPException, status
 from sqlmodel import Session, select
@@ -951,7 +951,7 @@ def delete_watchlist_item(
 
     # 3. Delete the item
     deleted = watchlist_item_crud.remove(session, id=item_id)
-    
+
     return WatchlistItemOut.model_validate(deleted)
 
 

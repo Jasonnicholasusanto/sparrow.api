@@ -30,7 +30,6 @@ from app.schemas.watchlist_share import (
     WatchlistShareOut,
     WatchlistShareUpdate,
 )
-from app.services.tags import attach_tags_to_watchlist, get_or_create_tags, sync_watchlist_tags
 from app.services.user_profile_service import get_user_profile_by_username
 from app.services.watchlist_service import (
     add_item_to_watchlist,
@@ -58,9 +57,6 @@ from app.services.watchlist_service import (
     update_user_watchlist,
     update_watchlist_item,
     update_watchlist_share_permission,
-    user_can_edit_watchlist,
-    validate_watchlist_allocation,
-    watchlist_item_exists,
 )
 from app.services.yfinance_service import fetch_ticker_market_snapshots
 
