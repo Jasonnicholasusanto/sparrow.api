@@ -7,6 +7,7 @@ from app.api.routes import (
     utils,
     users,
     watchlists,
+    watchlist_history,
     yfinance_main,
     favourite_stock,
     search_history,
@@ -20,6 +21,7 @@ api_router.include_router(utils.router)
 api_router.include_router(auth.router)
 api_router.include_router(favourite_stock.router)
 api_router.include_router(watchlists.router)
+api_router.include_router(watchlist_history.router)
 api_router.include_router(navbar.router)
 api_router.include_router(search_history.router)
 api_router.include_router(tags.router)
