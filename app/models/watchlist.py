@@ -4,9 +4,8 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import Column, UniqueConstraint, text
 from sqlalchemy.dialects import postgresql
-from sqlmodel import SQLModel, Field
+from sqlmodel import SQLModel, Field, Column, text, UniqueConstraint
 
 from app.schemas.watchlist import StockAllocationType, WatchlistVisibility
 
@@ -63,7 +62,7 @@ class Watchlist(SQLModel, table=True):
         )
     )
 
-    forked_from_id: int = Field(foreign_key="public.watchlist.id", index=True)
+    forked_from_id: Optional[int] = Field(foreign_key="public.watchlist.id", index=True)
     forked_at: Optional[datetime] = None
     fork_count: Optional[int] = 0
     original_author_id: UUID = Field(foreign_key="public.user_profile.id", index=True)

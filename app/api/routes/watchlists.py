@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies.profile import get_current_profile
 from app.api.deps import SessionDep
+from app.models.watchlist_audit_events import WatchlistAuditAction
 from app.schemas.tags import TagOut
 from app.schemas.watchlist import (
     StockAllocationType,
@@ -31,6 +32,7 @@ from app.schemas.watchlist_share import (
     WatchlistShareUpdate,
 )
 from app.services.user_profile_service import get_user_profile_by_username
+from app.services.watchlist_audit_service import create_watchlist_audit_event, list_watchlist_audit_events
 from app.services.watchlist_service import (
     add_item_to_watchlist,
     add_many_items_to_watchlist,
@@ -290,6 +292,18 @@ def create_watchlist(
             }
         )
 
+        create_watchlist_audit_event(
+            session=db,
+            watchlist_id=new_watchlist.id,
+            user_profile_id=user.id,
+            action=WatchlistAuditAction.WATCHLIST_CREATED,
+            after_data=watchlist_out.model_dump(mode="json"),
+            metadata={
+                "item_count": len(new_items),
+                "tag_count": len(resolved_tags),
+            },
+        )
+
         return {
             "message": "Watchlist created successfully.",
             "watchlist": watchlist_out,
@@ -313,17 +327,38 @@ def add_watchlist_item_to_watchlist(
     db: SessionDep,
     user=Depends(get_current_profile),
 ):
-    # Add the item
-    new_item = add_item_to_watchlist(
-        session=db,
-        watchlist_id=watchlist_id,
-        item=item,
-        user_profile_id=user.id,
-    )
+    try:
+        # Add the item
+        new_item = add_item_to_watchlist(
+            session=db,
+            watchlist_id=watchlist_id,
+            item=item,
+            user_profile_id=user.id,
+        )
 
-    new_item_out = WatchlistItemOut.model_validate(new_item, from_attributes=True)
+        new_item_out = WatchlistItemOut.model_validate(new_item, from_attributes=True)
 
-    return {"message": "Item added successfully", "item": new_item_out}
+        create_watchlist_audit_event(
+            session=db,
+            watchlist_id=watchlist_id,
+            user_profile_id=user.id,
+            action=WatchlistAuditAction.ITEM_ADDED,
+            item_id=new_item.id,
+            after_data=new_item_out.model_dump(mode="json"),
+            metadata={
+                "symbol": new_item.symbol,
+                "exchange": new_item.exchange,
+            },
+        )
+
+        return {"message": "Item added successfully", "item": new_item_out}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to add item to watchlist: {str(e)}",
+        )
 
 
 @router.post(
@@ -337,17 +372,42 @@ def add_bulk_watchlist_items_to_watchlist(
     db: SessionDep,
     user=Depends(get_current_profile),
 ):
-    new_items = add_many_items_to_watchlist(
-        session=db,
-        watchlist_id=watchlist_id,
-        user_profile_id=user.id,
-        items=items,
-    )
+    try:
+        new_items = add_many_items_to_watchlist(
+            session=db,
+            watchlist_id=watchlist_id,
+            user_profile_id=user.id,
+            items=items,
+        )
 
-    return AddBulkWatchlistItemsResponse(
-        count=len(new_items),
-        items=new_items,
-    )
+        create_watchlist_audit_event(
+            session=db,
+            watchlist_id=watchlist_id,
+            user_profile_id=user.id,
+            action=WatchlistAuditAction.ITEM_BULK_ADDED,
+            after_data={
+                "items": [
+                    WatchlistItemOut.model_validate(item, from_attributes=True).model_dump(mode="json")
+                    for item in new_items
+                ]
+            },
+            metadata={
+                "count": len(new_items),
+                "symbols": [item.symbol for item in new_items],
+            },
+        )
+
+        return AddBulkWatchlistItemsResponse(
+            count=len(new_items),
+            items=new_items,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to add items to watchlist: {str(e)}",
+        )
 
 
 @router.patch("/item/{item_id}", status_code=status.HTTP_200_OK)
@@ -360,21 +420,40 @@ def update_watchlist_item_route(
     """
     Update a specific watchlist item if the user has edit access.
     """
-    # Perform update
-    updated_item = update_watchlist_item(
-        session=db,
-        item_id=item_id,
-        update_data=item_data,
-        user_profile_id=user.id,
-    )
-
-    if not updated_item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Item not found or you do not have permission to edit it.",
+    try:
+        updated_item = update_watchlist_item(
+            session=db,
+            item_id=item_id,
+            update_data=item_data,
+            user_profile_id=user.id,
         )
 
-    return {"message": "Item updated successfully.", "item": updated_item}
+        if not updated_item:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Item not found or you do not have permission to edit it.",
+            )
+
+        create_watchlist_audit_event(
+            session=db,
+            watchlist_id=updated_item.watchlist_id,
+            user_profile_id=user.id,
+            action=WatchlistAuditAction.ITEM_UPDATED,
+            item_id=updated_item.id,
+            after_data=WatchlistItemOut.model_validate(
+                updated_item,
+                from_attributes=True,
+            ).model_dump(mode="json"),
+        )
+
+        return {"message": "Item updated successfully.", "item": updated_item}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update watchlist item: {str(e)}",
+        )
 
 
 @router.delete("/item/{item_id}", status_code=status.HTTP_200_OK)
@@ -386,20 +465,40 @@ def delete_watchlist_item_from_watchlist(
     """
     Delete a specific watchlist item if the user has edit access.
     """
-    # Perform deletion
-    deleted_item = delete_watchlist_item(
-        session=db,
-        item_id=item_id,
-        user_profile_id=user.id,
-    )
-
-    if not deleted_item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Item not found or already deleted.",
+    try:
+        # Perform deletion
+        deleted_item = delete_watchlist_item(
+            session=db,
+            item_id=item_id,
+            user_profile_id=user.id,
         )
 
-    return {"message": "Item deleted successfully.", "deleted_item": deleted_item}
+        if not deleted_item:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Item not found or already deleted.",
+            )
+
+        create_watchlist_audit_event(
+            session=db,
+            watchlist_id=deleted_item.watchlist_id,
+            user_profile_id=user.id,
+            action=WatchlistAuditAction.ITEM_DELETED,
+            item_id=deleted_item.id,
+            before_data=WatchlistItemOut.model_validate(
+                deleted_item,
+                from_attributes=True,
+            ).model_dump(mode="json"),
+        )
+
+        return {"message": "Item deleted successfully.", "deleted_item": deleted_item}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete watchlist item: {str(e)}",
+        )
 
 
 @router.delete("/{watchlist_id}", status_code=status.HTTP_200_OK)
@@ -412,23 +511,41 @@ def delete_watchlist_route(
     Delete a watchlist owned by the authenticated user.
     All related items and shares will be deleted via ON DELETE CASCADE.
     """
-    # Delete the watchlist (ownership check inside)
-    deleted_watchlist = delete_watchlist(
-        session=db,
-        watchlist_id=watchlist_id,
-        user_profile_id=user.id,
-    )
-
-    if not deleted_watchlist:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Watchlist not found or already deleted.",
+    try:
+        deleted_watchlist = delete_watchlist(
+            session=db,
+            watchlist_id=watchlist_id,
+            user_profile_id=user.id,
         )
 
-    return {
-        "message": "Watchlist deleted successfully.",
-        "deleted_watchlist": deleted_watchlist,
-    }
+        if not deleted_watchlist:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Watchlist not found or already deleted.",
+            )
+
+        create_watchlist_audit_event(
+            session=db,
+            watchlist_id=watchlist_id,
+            user_profile_id=user.id,
+            action=WatchlistAuditAction.WATCHLIST_DELETED,
+            before_data={
+                "watchlist_id": deleted_watchlist.id,
+                "name": deleted_watchlist.name,
+            },
+        )
+
+        return {
+            "message": "Watchlist deleted successfully.",
+            "deleted_watchlist": deleted_watchlist,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete watchlist: {str(e)}",
+        )
 
 
 @router.get("/shared/me", response_model=dict)
@@ -516,37 +633,55 @@ def update_watchlist(
     Update an existing watchlist.
     Only the owner can perform this action.
     """
-    # 1. Update watchlist metadata/items
-    updated_watchlist = update_user_watchlist(
-        session=db,
-        watchlist_id=watchlist_id,
-        owner_profile_id=user.id,
-        update_data=watchlist_data,
-    )
+    try:
+        # 1. Update watchlist metadata/items
+        updated_watchlist = update_user_watchlist(
+            session=db,
+            watchlist_id=watchlist_id,
+            owner_profile_id=user.id,
+            update_data=watchlist_data,
+        )
 
-    if not updated_watchlist:
+        if not updated_watchlist:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Watchlist not found or you do not have permission to edit it.",
+            )
+
+        # 2. Load items and enrich with market data for the response
+        items_by_watchlist_id = load_items_for_watchlists(db, [updated_watchlist.id])
+
+        item_loaded_watchlists = [
+            WatchlistOut.model_validate(
+                updated_watchlist, from_attributes=True
+            ).model_copy(
+                update={"items": [WatchlistItemOut.model_validate(item, from_attributes=True) for item in items_by_watchlist_id.get(updated_watchlist.id, [])]}
+            )
+        ]
+
+        symbols = [item.symbol for items in items_by_watchlist_id.values() for item in items if item.symbol and item.exchange]
+        snapshot_map = fetch_ticker_market_snapshots(symbols)
+
+        enriched_watchlists = enrich_watchlists(item_loaded_watchlists, snapshot_map)
+
+        updated_out = enriched_watchlists[0]
+
+        create_watchlist_audit_event(
+            session=db,
+            watchlist_id=watchlist_id,
+            user_profile_id=user.id,
+            action=WatchlistAuditAction.WATCHLIST_UPDATED,
+            after_data=updated_out.model_dump(mode="json"),
+        )
+
+        return updated_out
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Watchlist not found or you do not have permission to edit it.",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update watchlist: {str(e)}",
         )
-    
-    # 2. Load items and enrich with market data for the response
-    items_by_watchlist_id = load_items_for_watchlists(db, [updated_watchlist.id])
-
-    item_loaded_watchlists = [
-        WatchlistOut.model_validate(
-            updated_watchlist, from_attributes=True
-        ).model_copy(
-            update={"items": [WatchlistItemOut.model_validate(item, from_attributes=True) for item in items_by_watchlist_id.get(updated_watchlist.id, [])]}
-        )
-    ]
-
-    symbols = [item.symbol for items in items_by_watchlist_id.values() for item in items if item.symbol and item.exchange]
-    snapshot_map = fetch_ticker_market_snapshots(symbols)
-
-    enriched_watchlists = enrich_watchlists(item_loaded_watchlists, snapshot_map)  
-
-    return enriched_watchlists[0]
 
 
 @router.post("/{watchlist_id}/bookmark", status_code=status.HTTP_201_CREATED)
@@ -558,12 +693,29 @@ def bookmark_watchlist_route(
     """
     Bookmark a public watchlist.
     """
-    bookmark = bookmark_watchlist(
-        session=db,
-        watchlist_id=watchlist_id,
-        user_profile_id=user.id,
-    )
-    return {"message": "Watchlist bookmarked successfully.", "bookmark": bookmark}
+    try:
+        bookmark = bookmark_watchlist(
+            session=db,
+            watchlist_id=watchlist_id,
+            user_profile_id=user.id,
+        )
+
+        create_watchlist_audit_event(
+            session=db,
+            watchlist_id=watchlist_id,
+            user_profile_id=user.id,
+            action=WatchlistAuditAction.WATCHLIST_BOOKMARKED,
+            after_data={"bookmark_id": bookmark.id},
+        )
+
+        return {"message": "Watchlist bookmarked successfully.", "bookmark": bookmark}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to bookmark watchlist: {str(e)}",
+        )
 
 
 @router.delete("/{watchlist_id}/bookmark", status_code=status.HTTP_200_OK)
@@ -575,11 +727,29 @@ def unbookmark_watchlist_route(
     """
     Remove a bookmark for a public watchlist.
     """
-    return unbookmark_watchlist(
-        session=db,
-        watchlist_id=watchlist_id,
-        user_profile_id=user.id,
-    )
+    try:
+        result = unbookmark_watchlist(
+            session=db,
+            watchlist_id=watchlist_id,
+            user_profile_id=user.id,
+        )
+
+        create_watchlist_audit_event(
+            session=db,
+            watchlist_id=watchlist_id,
+            user_profile_id=user.id,
+            action=WatchlistAuditAction.WATCHLIST_UNBOOKMARKED,
+            before_data={"bookmark_id": result.id} if result else None,
+        )
+
+        return {"message": "Watchlist unbookmarked successfully."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to unbookmark watchlist: {str(e)}",
+        )
 
 
 @router.get("/bookmarks/me", status_code=status.HTTP_200_OK)
@@ -614,6 +784,14 @@ def fork_watchlist_route(
         result = fork_watchlist(
             session=db, watchlist_id=watchlist_id, user_profile_id=user.id
         )
+
+        create_watchlist_audit_event(
+            session=db,
+            watchlist_id=result.id,
+            user_profile_id=user.id,
+            action=WatchlistAuditAction.WATCHLIST_FORKED,
+            after_data={"forked_from_id": result.forked_from_id, "new_watchlist_id": result.id},
+        )
         return result
     except HTTPException:
         raise
@@ -647,6 +825,13 @@ def fork_watchlist_custom_route(
             user_profile_id=user.id,
             custom_data=payload,
         )
+        create_watchlist_audit_event(
+            session=db,
+            watchlist_id=result.id,
+            user_profile_id=user.id,
+            action=WatchlistAuditAction.WATCHLIST_FORKED,
+            after_data={"forked_from_id": result.forked_from_id, "new_watchlist_id": result.id},
+        )
         return result
     except HTTPException:
         raise
@@ -674,6 +859,13 @@ def pull_forked_watchlist_route(
             session=db,
             watchlist_id=watchlist_id,
             user_profile_id=user.id,
+        )
+        create_watchlist_audit_event(
+            session=db,
+            watchlist_id=result.id,
+            user_profile_id=user.id,
+            action=WatchlistAuditAction.WATCHLIST_PULLED,
+            after_data={"forked_from_id": result.forked_from_id, "new_watchlist_id": result.id},
         )
         return result
     except HTTPException:
@@ -727,3 +919,19 @@ def get_trending_watchlists(
     Return trending watchlists, ranked by fork count + votes.
     """
     return list_trending_watchlists(session=db, limit=limit)
+
+
+@router.get("/{watchlist_id}/activity")
+def get_watchlist_activity(
+    watchlist_id: int,
+    db: SessionDep,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user=Depends(get_current_profile),
+):
+    return list_watchlist_audit_events(
+        session=db,
+        watchlist_id=watchlist_id,
+        limit=limit,
+        offset=offset,
+    )
