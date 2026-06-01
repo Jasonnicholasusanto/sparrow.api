@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies.profile import get_current_profile
 from app.api.deps import SessionDep
+from app.models.watchlist_audit_events import WatchlistAuditAction, WatchlistAuditEvent
 from app.schemas.watchlist_history import WatchlistAuditEventOut
 from app.services.watchlist_audit_service import (
     delete_all_watchlist_history_for_user,
@@ -18,15 +19,23 @@ def delete_my_watchlist_history(
     db: SessionDep,
     user=Depends(get_current_profile),
 ):
-    deleted_count = delete_all_watchlist_history_for_user(
-        session=db,
-        user_profile_id=user.id,
-    )
+    try:
+        deleted_count = delete_all_watchlist_history_for_user(
+            session=db,
+            user_profile_id=user.id,
+        )
 
-    return {
-        "message": "Watchlist history deleted successfully.",
-        "deleted_count": deleted_count,
-    }
+        return {
+            "message": "Watchlist history deleted successfully.",
+            "deleted_count": deleted_count,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete watchlist history: {str(e)}",
+        )
 
 
 @router.delete("/watchlist/{watchlist_id}", status_code=status.HTTP_200_OK)
@@ -35,16 +44,24 @@ def delete_watchlist_history(
     db: SessionDep,
     user=Depends(get_current_profile),
 ):
-    deleted_count = delete_all_watchlist_history_for_watchlist(
-        session=db,
-        watchlist_id=watchlist_id,
-        user_profile_id=user.id,
-    )
+    try:
+        deleted_count = delete_all_watchlist_history_for_watchlist(
+            session=db,
+            watchlist_id=watchlist_id,
+            user_profile_id=user.id,
+        )
 
-    return {
-        "message": "Watchlist history deleted successfully.",
-        "deleted_count": deleted_count,
-    }
+        return {
+            "message": "Watchlist history deleted successfully.",
+            "deleted_count": deleted_count,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete watchlist history: {str(e)}",
+        )
 
 
 @router.get("/me", response_model=list[WatchlistAuditEventOut])
@@ -54,12 +71,20 @@ def get_my_watchlist_history(
     offset: int = Query(0, ge=0),
     user=Depends(get_current_profile),
 ):
-    return list_watchlist_audit_events_for_user(
-        session=db,
-        user_profile_id=user.id,
-        limit=limit,
-        offset=offset,
-    )
+    try:
+        return list_watchlist_audit_events_for_user(
+            session=db,
+            user_profile_id=user.id,
+            limit=limit,
+            offset=offset,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch watchlist history: {str(e)}",
+        )
 
 
 @router.get("/watchlist/{watchlist_id}", response_model=list[WatchlistAuditEventOut])
@@ -70,9 +95,22 @@ def get_watchlist_history(
     offset: int = Query(0, ge=0),
     user=Depends(get_current_profile),
 ):
-    return list_watchlist_audit_events(
-        session=db,
-        watchlist_id=watchlist_id,
-        limit=limit,
-        offset=offset,
-    )
+    try:
+        return list_watchlist_audit_events(
+            session=db,
+            watchlist_id=watchlist_id,
+            limit=limit,
+            offset=offset,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch watchlist history: {str(e)}",
+        )
+
+
+@router.get("/actions")
+def list_watchlist_history_actions():
+    return [action.value for action in WatchlistAuditAction]
