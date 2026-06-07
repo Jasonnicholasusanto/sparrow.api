@@ -1,11 +1,19 @@
+from datetime import date
+
+from typing_extensions import Annotated, Literal
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.params import Query
+from fastapi.params import Path, Query
 import yfinance as yf
 import requests
 from app.api.dependencies.profile import get_current_profile
 from app.core.config import settings
 from app.schemas.stocks import (
+    EarningsHistoryItem,
+    EarningsHistoryResponse,
     MultiTickerSparklineResponse,
+    RevenueHistoryPeriod,
+    RevenueHistoryResponse,
     SearchQuoteEnrichedResponse,
     SearchQuotesEnrichedResult,
     SearchResponse,
@@ -21,6 +29,7 @@ from app.schemas.stocks import (
 from app.utils.functions import safe_json_float
 from app.utils.global_variables import STOCK_INTERVALS, STOCK_PERIODS
 from app.utils.stocks import get_regular_market_change
+import pandas as pd
 
 
 router = APIRouter(prefix="/stocks", tags=["Stocks"])
@@ -44,6 +53,26 @@ async def get_alpha_vantage_ticker_data(symbol: str, user=Depends(get_current_pr
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch fast info for '{symbol}': {str(e)}",
+        )
+
+
+@router.get("/get-ticker-info-raw/{symbol}")
+async def get_ticker_info_raw(symbol: str, user=Depends(get_current_profile)):
+    try:
+        ticker_data = yf.Ticker(symbol)
+        info = ticker_data.get_info()
+        if info is None or "symbol" not in info:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Ticker '{symbol}' not found or has no info.",
+            )
+        return info
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch info for '{symbol}': {str(e)}",
         )
 
 
@@ -981,3 +1010,215 @@ async def get_ticker_sparklines(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch sparkline data: {str(e)}",
         )
+    
+
+@router.get(
+    "/{symbol}/revenue-history",
+    response_model=RevenueHistoryResponse,
+    summary="Get ticker revenue history",
+)
+def get_symbol_revenue_history(
+    symbol: str,
+    frequency: Annotated[
+        Literal["annual", "quarterly", "trailing"],
+        Query(description="Revenue reporting frequency."),
+    ] = "annual",
+    user=Depends(get_current_profile),
+) -> RevenueHistoryResponse:
+    normalised_symbol = symbol.strip().upper()
+
+    if not normalised_symbol:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A ticker symbol is required.",
+        )
+
+    try:
+        ticker = yf.Ticker(normalised_symbol)
+
+        income_statement = ticker.get_income_stmt(
+            freq="yearly" if frequency == "annual" else "quarterly",
+        )
+
+        if income_statement is None or income_statement.empty:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    f"No {frequency} income statement data was found "
+                    f"for '{normalised_symbol}'."
+                ),
+            )
+
+        if "TotalRevenue" not in income_statement.index:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    f"Revenue data was not available for "
+                    f"'{normalised_symbol}'."
+                ),
+            )
+
+        revenue_series = income_statement.loc["TotalRevenue"]
+
+        raw_periods = sorted(
+            [
+                {
+                    "period_end": pd.Timestamp(period).date(),
+                    "revenue": (
+                        None
+                        if pd.isna(revenue)
+                        else float(revenue)
+                    ),
+                }
+                for period, revenue in revenue_series.items()
+            ],
+            key=lambda item: item["period_end"],
+        )
+
+        periods: list[RevenueHistoryPeriod] = []
+
+        for index, item in enumerate(raw_periods):
+            current_revenue = item["revenue"]
+            previous_revenue = (
+                raw_periods[index - 1]["revenue"]
+                if index > 0
+                else None
+            )
+
+            growth = None
+
+            if (
+                current_revenue is not None
+                and previous_revenue is not None
+                and previous_revenue != 0
+            ):
+                growth = (
+                    current_revenue - previous_revenue
+                ) / abs(previous_revenue)
+
+            periods.append(
+                RevenueHistoryPeriod(
+                    period_end=item["period_end"],
+                    revenue=current_revenue,
+                    revenue_growth=growth,
+                )
+            )
+
+        return RevenueHistoryResponse(
+            symbol=normalised_symbol,
+            currency=ticker.fast_info.get("currency"),
+            frequency=frequency,
+            periods=list(reversed(periods)),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                f"Failed to fetch revenue history for "
+                f"'{normalised_symbol}': {exc}"
+            ),
+        ) from exc
+    
+
+def to_float(value: object) -> float | None:
+    if value is None or pd.isna(value):
+        return None
+
+    return float(value)
+
+
+@router.get(
+    "/{symbol}/earnings-history",
+    response_model=EarningsHistoryResponse,
+    summary="Get historical earnings surprises",
+    description=(
+        "Returns historical EPS estimates, actual EPS and "
+        "earnings surprise results for a ticker symbol."
+    ),
+)
+def get_symbol_earnings_history(
+    symbol: Annotated[
+        str,
+        Path(
+            min_length=1,
+            max_length=30,
+            description="Ticker symbol, such as AMD or BHP.AX.",
+        ),
+    ],
+    user=Depends(get_current_profile),
+) -> EarningsHistoryResponse:
+    normalised_symbol = symbol.strip().upper()
+
+    try:
+        ticker = yf.Ticker(normalised_symbol)
+
+        df = ticker.get_earnings_history(as_dict=False)
+
+        if df is None or df.empty:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    f"No earnings history was found for "
+                    f"'{normalised_symbol}'."
+                ),
+            )
+
+        periods: list[EarningsHistoryItem] = []
+
+        for earnings_date, row in df.iterrows():
+            eps_estimate = to_float(row.get("epsEstimate"))
+            eps_actual = to_float(row.get("epsActual"))
+            eps_difference = to_float(row.get("epsDifference"))
+            surprise_percent = to_float(row.get("surprisePercent"))
+
+            if eps_difference is None and (
+                eps_actual is not None and eps_estimate is not None
+            ):
+                eps_difference = eps_actual - eps_estimate
+
+            result = None
+
+            if eps_difference is not None:
+                if eps_difference > 0:
+                    result = "beat"
+                elif eps_difference < 0:
+                    result = "miss"
+                else:
+                    result = "met"
+
+            periods.append(
+                EarningsHistoryItem(
+                    earnings_date=pd.Timestamp(
+                        earnings_date
+                    ).to_pydatetime(),
+                    eps_estimate=eps_estimate,
+                    eps_actual=eps_actual,
+                    eps_difference=eps_difference,
+                    surprise_percent=surprise_percent,
+                    result=result,
+                )
+            )
+
+        periods.sort(
+            key=lambda item: item.earnings_date,
+            reverse=True,
+        )
+
+        return EarningsHistoryResponse(
+            symbol=normalised_symbol,
+            periods=periods,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                f"Failed to fetch earnings history for "
+                f"'{normalised_symbol}': {exc}"
+            ),
+        ) from exc

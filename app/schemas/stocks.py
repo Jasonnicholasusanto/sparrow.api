@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, HttpUrl, AliasChoices
 
@@ -564,3 +564,30 @@ class TickerMarketSnapshotResponse(BaseModel):
     volume: Optional[int] = None
     regular_market_change: Optional[float] = None
     regular_market_change_percent: Optional[float] = None
+
+
+class RevenueHistoryPeriod(BaseModel):
+    period_end: date
+    revenue: float | None
+    revenue_growth: float | None
+
+
+class RevenueHistoryResponse(BaseModel):
+    symbol: str
+    currency: str | None
+    frequency: Literal["annual", "quarterly", "trailing"]
+    periods: list[RevenueHistoryPeriod]
+
+
+class EarningsHistoryItem(BaseModel):
+    earnings_date: datetime
+    eps_estimate: float | None = None
+    eps_actual: float | None = None
+    eps_difference: float | None = None
+    surprise_percent: float | None = None
+    result: str | None = None
+
+
+class EarningsHistoryResponse(BaseModel):
+    symbol: str
+    periods: list[EarningsHistoryItem]
